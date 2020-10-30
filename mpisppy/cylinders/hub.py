@@ -330,6 +330,36 @@ class Hub(SPCommunicator):
         window.Put((values, len(values), MPI.DOUBLE), self.rank_inter)
         window.Unlock(self.rank_inter)
 
+    def hub_to_spokes(self, values, spoke_ranks):
+        """ Put the specified values into the specified locally-owned buffer
+            for the spokes in spoke_ranks to pick up.
+
+            Does so in three passes -- All lock, barrier, all put, barrier, all unlock
+
+            Notes:
+                This automatically does the -1 indexing
+
+                This assumes that values contains a slot at the end for the
+                write_id
+        """
+        for spoke_rank_inter in spoke_ranks:
+            expected_length = self.local_lengths[spoke_rank_inter - 1] + 1
+            if len(values) != expected_length:
+                raise RuntimeError(
+                    f"Attempting to put array of length {len(values)} "
+                    f"into local buffer of length {expected_length}"
+                )
+            self.local_write_ids[spoke_rank_inter - 1] += 1
+        for spoke_rank_inter in spoke_ranks:
+            self.windows[spoke_rank_inter-1].Lock(self.rank_inter)
+        self.intracomm.Barrier()
+        for spoke_rank_inter in spoke_ranks:
+            values[-1] = self.local_write_ids[spoke_rank_inter - 1]
+            self.windows[spoke_rank_inter-1].Put((values, len(values), MPI.DOUBLE), self.rank_inter)
+        self.intracomm.Barrier()
+        for spoke_rank_inter in spoke_ranks:
+            self.windows[spoke_rank_inter-1].Unlock(self.rank_inter)
+
     def hub_from_spoke(self, values, spoke_num):
         """ spoke_num is the rank in the intercomm, so it is 1-based not 0-based
             
@@ -360,12 +390,15 @@ class Hub(SPCommunicator):
             processes (don't need to call them one at a time).
         """
         for rank in range(1, self.n_spokes + 1):
+            self.windows[rank-1].Lock(0)
+        self.intracomm.Barrier()
+        for rank in range(1, self.n_spokes + 1):
             dummies = np.zeros(self.local_lengths[rank - 1] + 1)
             dummies[-1] = -1
-            window = self.windows[rank - 1]
-            window.Lock(0)
-            window.Put((dummies, len(dummies), MPI.DOUBLE), 0)
-            window.Unlock(0)
+            self.windows[rank-1].Put((dummies, len(dummies), MPI.DOUBLE), 0)
+        self.intracomm.Barrier()
+        for rank in range(1, self.n_spokes + 1):
+            self.windows[rank-1].Unlock(0)
 
 
 class PHHub(Hub):
@@ -485,8 +518,7 @@ class PHHub(Hub):
                 nonant_send_buffer[ci] = xvar._value
                 ci += 1
         logging.debug("hub is sending X nonants={}".format(nonant_send_buffer))
-        for idx in self.nonant_spoke_indices:
-            self.hub_to_spoke(nonant_send_buffer, idx)
+        self.hub_to_spokes(nonant_send_buffer, self.nonant_spoke_indices)
 
     def initialize_ws(self):
         """ Initialize the buffer for the hub to send dual weights
@@ -504,8 +536,7 @@ class PHHub(Hub):
         """
         self.opt._populate_W_cache(self.w_send_buffer)
         logging.debug("hub is sending Ws={}".format(self.w_send_buffer))
-        for idx in self.w_spoke_indices:
-            self.hub_to_spoke(self.w_send_buffer, idx)
+        self.hub_to_spokes(self.w_send_buffer, self.w_spoke_indices)
 
 
 class LShapedHub(Hub):
@@ -599,8 +630,7 @@ class LShapedHub(Hub):
                 nonant_send_buffer[ci] = nonant_to_master_var_map[xvar]._value
                 ci += 1
         logging.debug("hub is sending X nonants={}".format(nonant_send_buffer))
-        for idx in self.nonant_spoke_indices:
-            self.hub_to_spoke(nonant_send_buffer, idx)
+        self.hub_to_spokes(nonant_send_buffer, self.nonant_spoke_indices)
 
 
 class APHHub(PHHub):
