@@ -6,6 +6,7 @@ import time
 import datetime as dt
 import logging
 import math
+import itertools
 
 import numpy as np
 import pyomo.environ as pyo
@@ -887,7 +888,7 @@ class PHBase(mpisppy.spbase.SPBase):
                 `local_scenarios`).
 
         Note: 
-            We attach a list of the scenario names called _PySP_subsecen_names
+            We attach a list of the scenario names called _PySP_subscen_names
         Note:
             We deactivate the objective on the scenarios.
         Note:
@@ -928,7 +929,8 @@ class PHBase(mpisppy.spbase.SPBase):
                   gripe=False,
                   tee=False,
                   verbose=False,
-                  disable_pyomo_signal_handling=False):
+                  disable_pyomo_signal_handling=False,
+                  only_load_nonants=False):
         """ Solve one subproblem.
 
         Args:
@@ -949,6 +951,9 @@ class PHBase(mpisppy.spbase.SPBase):
             disable_pyomo_signal_handling (boolean, optional):
                 True for asynchronous PH; ignored for persistent solvers.
                 Default False.
+            only_load_nonants (boolean, optional):
+                If True, only loads the solution for the non-anticipative variables
+                when a persistent solver is used. Default False.
 
         Returns:
             float:
@@ -1030,7 +1035,14 @@ class PHBase(mpisppy.spbase.SPBase):
                             results.solver.termination_condition)
         else:
             if sputils.is_persistent(s._solver_plugin):
-                s._solver_plugin.load_vars()
+                if only_load_nonants:
+                    if self.bundling:
+                        nonants = itertools.chain((s[sname]._nonant_indexes.values() for sname in s._PySP_subscen_names))
+                        s._solver_plugin.load_vars(nonants)
+                    else:
+                        s._solver_plugin.load_vars(s._nonant_indexes.values())
+                else:
+                    s._solver_plugin.load_vars()
             else:
                 s.solutions.load_from(results)
             if self.is_minimizing:
@@ -1055,7 +1067,8 @@ class PHBase(mpisppy.spbase.SPBase):
                    gripe=False,
                    disable_pyomo_signal_handling=False,
                    tee=False,
-                   verbose=False):
+                   verbose=False,
+                   only_load_nonants=False):
         """ Loop over `local_subproblems` and solve them in a manner 
         dicated by the arguments. 
         
@@ -1086,6 +1099,9 @@ class PHBase(mpisppy.spbase.SPBase):
                 If True, displays solver output. Default False.
             verbose (boolean, optional):
                 If True, displays verbose output. Default False.
+            only_load_nonants (boolean, optional):
+                If True, only loads the solution for the non-anticipative variables
+                when a persistent solver is used. Default False.
         """
 
         """ Developer notes:
@@ -1123,7 +1139,8 @@ class PHBase(mpisppy.spbase.SPBase):
                                               verbose=verbose,
                                               tee=tee,
                                               gripe=gripe,
-                disable_pyomo_signal_handling=disable_pyomo_signal_handling
+                disable_pyomo_signal_handling=disable_pyomo_signal_handling,
+                only_load_nonants=only_load_nonants,
             )
 
         if dtiming:
