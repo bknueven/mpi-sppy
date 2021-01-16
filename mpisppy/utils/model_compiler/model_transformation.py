@@ -8,11 +8,10 @@
 #  This software is distributed under the 3-clause BSD License.
 #  ___________________________________________________________________________
 
-__all__ = ("compile_block_linear_constraints",)
-
 import time
 import logging
-import array
+import numpy as np
+
 from weakref import ref as weakref_ref
 
 from pyomo.core.base.set_types import Any
@@ -54,7 +53,7 @@ def _label_bytes(x):
 def compile_block_linear_constraints(parent_block,
                                      constraint_name,
                                      skip_trivial_constraints=False,
-                                     single_precision_storage=False,
+                                     #single_precision_storage=False,
                                      verbose=False,
                                      descend_into=True):
 
@@ -73,7 +72,7 @@ def compile_block_linear_constraints(parent_block,
     #
     A_data = []
     A_indices = []
-    A_indptr = []
+    A_indptr = [0]
     LowerBounds = []
     UpperBounds = []
     Vars = []
@@ -175,7 +174,7 @@ def compile_block_linear_constraints(parent_block,
 
                         assert repn.nonlinear_expr is None
 
-                        row_variable_symbols = []
+                        row_variable_indices = []
                         row_coefficients = []
                         if len(repn.linear_vars) == 0:
                             if skip_trivial_constraints:
@@ -187,11 +186,11 @@ def compile_block_linear_constraints(parent_block,
                             assert repn.linear_coefs is not None
                             row_coefficients = repn.linear_coefs
 
-                        A_indptr.append(A_indptr[-1] + len(row_variable_symbols))
+                        A_indptr.append(A_indptr[-1] + len(row_variable_indices))
                         A_indices.extend(row_variable_indices)
                         A_data.extend(row_coefficients)
 
-                        nnz += len(row_variable_symbols)
+                        nnz += len(row_variable_indices)
                         nrows += 1
 
                         L = _get_bound(constraint_data.lower)
@@ -199,12 +198,12 @@ def compile_block_linear_constraints(parent_block,
                         constant = value(repn.constant)
 
                         if L is None:
-                            LowerBounds.append(None)
+                            LowerBounds.append(-np.inf)
                         else:
                             LowerBounds.append(L - constant)
 
                         if U is None:
-                            UpperBounds.append(None)
+                            UpperBounds.append(np.inf)
                         else:
                             UpperBounds.append(U - constant)
 
@@ -249,6 +248,12 @@ def compile_block_linear_constraints(parent_block,
         print("Time to remove compiled constraint objects: %.2f seconds"
               % (stop_time-start_time))
 
+    A_data = np.array(A_data, dtype=np.double)
+    A_indices = np.array(A_indices, dtype=np.uint64)
+    A_indptr = np.array(A_indptr, dtype=np.uint64)
+    LowerBounds = np.array(LowerBounds, dtype=np.double)
+    UpperBounds = np.array(UpperBounds, dtype=np.double)
+
     parent_block.add_component(constraint_name,
                                MatrixConstraint(A_data,
                                                 A_indices,
@@ -256,3 +261,6 @@ def compile_block_linear_constraints(parent_block,
                                                 LowerBounds,
                                                 UpperBounds,
                                                 Vars))
+
+    return VarIDToVarIdx
+
