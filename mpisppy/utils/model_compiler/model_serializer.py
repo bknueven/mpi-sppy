@@ -11,7 +11,7 @@ from .model_transformation import compile_block_linear_constraints
 def serialize_model(model, verbose=True, keep_expressions=True):
 
     VarIDToVarIdx = compile_block_linear_constraints(model,
-                                     '_mpisppy_constraints',
+                                     '_serialized_constraints',
                                      verbose=verbose)
 
     serialize_objective(model, VarIDToVarIdx,
@@ -25,7 +25,7 @@ def serialize_model(model, verbose=True, keep_expressions=True):
 
 def deserialize_model(model, verbose=True):
 
-    VarIdxtoVarID = model._mpisppy_constraints._x
+    VarIdxtoVarID = model._serialized_constraints._x
 
     deserialize_objective(model, VarIdxtoVarID, verbose)
     deserialize_expressions(model, VarIdxtoVarID, verbose)
