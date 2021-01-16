@@ -71,11 +71,12 @@ def compile_block_linear_constraints(parent_block,
     #
     # Linear MatrixConstraint in CSR format
     #
-    SparseMat_pRows = []
-    SparseMat_jCols = []
-    SparseMat_Vals = []
-    Ranges = []
-    RangeTypes = []
+    A_data = []
+    A_indices = []
+    A_indptr = []
+    LowerBounds = []
+    UpperBounds = []
+    Vars = []
 
     def _get_bound(exp):
         if exp is None:
@@ -107,15 +108,14 @@ def compile_block_linear_constraints(parent_block,
     # First Pass: assign each variable a deterministic id
     #             (an index in a list)
     #
-    VarSymbolToVarObject = []
+    Vars = []
     for block in all_blocks:
-        VarSymbolToVarObject.extend(
+        Vars.extend(
             block.component_data_objects(Var,
                                          sort=sortOrder,
                                          descend_into=False))
-    VarIDToVarSymbol = \
-        dict((id(vardata), index)
-             for index, vardata in enumerate(VarSymbolToVarObject))
+
+    VarIDToVarIdx = { id(vardata) : index for index, vardata in enumerate(Vars) }
 
     stop_time = time.time()
     if verbose:
@@ -181,18 +181,15 @@ def compile_block_linear_constraints(parent_block,
                             if skip_trivial_constraints:
                                 continue
                         else:
-                            row_variable_symbols = \
-                                [VarIDToVarSymbol[id(vardata)]
+                            row_variable_indices = \
+                                [VarIDToVarIdx[id(vardata)]
                                  for vardata in repn.linear_vars]
-                            referenced_variable_symbols.update(
-                                row_variable_symbols)
                             assert repn.linear_coefs is not None
                             row_coefficients = repn.linear_coefs
 
-                        SparseMat_pRows.append(SparseMat_pRows[-1] + \
-                                               len(row_variable_symbols))
-                        SparseMat_jCols.extend(row_variable_symbols)
-                        SparseMat_Vals.extend(row_coefficients)
+                        A_indptr.append(A_indptr[-1] + len(row_variable_symbols))
+                        A_indices.extend(row_variable_indices)
+                        A_data.extend(row_coefficients)
 
                         nnz += len(row_variable_symbols)
                         nrows += 1
@@ -201,26 +198,18 @@ def compile_block_linear_constraints(parent_block,
                         U = _get_bound(constraint_data.upper)
                         constant = value(repn.constant)
 
-                        Ranges.append(L - constant if (L is not None) else 0)
-                        Ranges.append(U - constant if (U is not None) else 0)
-                        if (L is not None) and \
-                           (U is not None) and \
-                           (not constraint_data.equality):
-                            RangeTypes.append(MatrixConstraint.LowerBound |
-                                              MatrixConstraint.UpperBound)
-                        elif constraint_data.equality:
-                            RangeTypes.append(MatrixConstraint.Equality)
-                        elif L is not None:
-                            assert U is None
-                            RangeTypes.append(MatrixConstraint.LowerBound)
+                        if L is None:
+                            LowerBounds.append(None)
                         else:
-                            assert U is not None
-                            RangeTypes.append(MatrixConstraint.UpperBound)
+                            LowerBounds.append(L - constant)
+
+                        if U is None:
+                            UpperBounds.append(None)
+                        else:
+                            UpperBounds.append(U - constant)
 
                         # Start freeing up memory
                         constraint[index] = Constraint.Skip
-
-    ncols = len(referenced_variable_symbols)
 
     stop_time = time.time()
     if verbose:
@@ -260,64 +249,10 @@ def compile_block_linear_constraints(parent_block,
         print("Time to remove compiled constraint objects: %.2f seconds"
               % (stop_time-start_time))
 
-    start_time = time.time()
-    if verbose:
-        print("Assigning variable column indices...")
-
-    #
-    # Assign a column index to the set of referenced variables
-    #
-    ColumnIndexToVarSymbol = sorted(referenced_variable_symbols)
-    VarSymbolToColumnIndex = dict((symbol, column)
-                                  for column, symbol in enumerate(ColumnIndexToVarSymbol))
-    SparseMat_jCols = [VarSymbolToColumnIndex[symbol] for symbol in SparseMat_jCols]
-    del VarSymbolToColumnIndex
-    ColumnIndexToVarObject = [VarSymbolToVarObject[var_symbol]
-                              for var_symbol in ColumnIndexToVarSymbol]
-
-    stop_time = time.time()
-    if verbose:
-        print("Time to assign variable column indices: %.2f seconds"
-              % (stop_time-start_time))
-
-    start_time = time.time()
-    if verbose:
-        print("Converting compiled constraint data to array storage...")
-        print("  - Using %s precision for numeric values"
-              % ('single' if single_precision_storage else 'double'))
-
-    #
-    # Convert to array storage
-    #
-
-    number_storage = 'f' if single_precision_storage else 'd'
-    SparseMat_pRows = array.array('L', SparseMat_pRows)
-    SparseMat_jCols = array.array('L', SparseMat_jCols)
-    SparseMat_Vals = array.array(number_storage, SparseMat_Vals)
-    Ranges = array.array(number_storage, Ranges)
-    RangeTypes = array.array('B', RangeTypes)
-
-    stop_time = time.time()
-    if verbose:
-        storage_bytes = \
-            SparseMat_pRows.buffer_info()[1] * SparseMat_pRows.itemsize + \
-            SparseMat_jCols.buffer_info()[1] * SparseMat_jCols.itemsize + \
-            SparseMat_Vals.buffer_info()[1] * SparseMat_Vals.itemsize + \
-            Ranges.buffer_info()[1] * Ranges.itemsize + \
-            RangeTypes.buffer_info()[1] * RangeTypes.itemsize
-        print("Sparse Matrix Dimension:")
-        print("  - Rows: "+str(nrows))
-        print("  - Cols: "+str(ncols))
-        print("  - Nonzeros: "+str(nnz))
-        print("Compiled Data Storage: "+str(_label_bytes(storage_bytes)))
-        print("Time to convert compiled constraint data to "
-              "array storage: %.2f seconds" % (stop_time-start_time))
-
     parent_block.add_component(constraint_name,
-                               MatrixConstraint(nrows, ncols, nnz,
-                                                SparseMat_pRows,
-                                                SparseMat_jCols,
-                                                SparseMat_Vals,
-                                                Ranges,
-                                                RangeTypes,
-                                                ColumnIndexToVarObject))
+                               MatrixConstraint(A_data,
+                                                A_indices,
+                                                A_indptr,
+                                                LowerBounds,
+                                                UpperBounds,
+                                                Vars))
