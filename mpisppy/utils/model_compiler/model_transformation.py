@@ -32,20 +32,6 @@ from pyomo.repn import generate_standard_repn
 from six import iteritems, PY3
 from six.moves import xrange
 
-if PY3:
-    from collections.abc import Mapping as collections_Mapping
-else:
-    from collections import Mapping as collections_Mapping
-
-def _label_bytes(x):
-    if x < 1e3:
-        return str(x)+" B"
-    if x < 1e6:
-        return str(x / 1.0e3)+" KB"
-    if x < 1e9:
-        return str(x / 1.0e6)+" MB"
-    return str(x / 1.0e9)+" GB"
-
 #
 # Compile a Pyomo constructed model in-place, storing the compiled
 # sparse constraint object on the model under constraint_name.
