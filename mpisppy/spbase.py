@@ -23,23 +23,23 @@ class SPBase(object):
     """ Defines an interface to all strata (hubs and spokes)
 
         Args:
-            options (dict): PH options
+            options (dict): options ## BK: I think these are just general options depending on the derived class
             all_scenario_names (list): all scenario names
             scenario_creator (fct): returns a concrete model with special things
             scenario_denouement (fct): for post processing and reporting
             all_nodenames (list): all node names; can be None for 2 Stage
             mpicomm (MPI comm): if not given, use the global fullcomm
-            rank0 (int): The lowest global rank for this type of object
+            rank0 (int): The lowest global rank for this type of object ## BK: Is this used??
             cb_data (any): passed directly to instance callback                
 
         Attributes:
           local_scenarios (dict of scenario objects): concrete models with 
                 extra data, key is name
-          comms (dict): keys are node names values are comm objects.
+          comms (dict): keys are node names values are comm objects. ## BK: This isn't needed for EF, and created a headache for me the other day
           local_scenario_names (list): names of locals 
 
           NOTEs:
-          = dropping current_solver_options to children if needed
+          = dropping current_solver_options to children if needed ## BK: ???
 
     """
 
@@ -55,8 +55,8 @@ class SPBase(object):
         cb_data=None,
         variable_probability=None
     ):
-        self.startdt = dt.datetime.now()
-        self.start_time = time.time()
+        self.startdt = dt.datetime.now() #BK : why both?
+        self.start_time = time.time() #BK : we should probably be using time.perf_counter()
         self.options = options
         self.all_scenario_names = all_scenario_names
         self.scenario_creator = scenario_creator
@@ -82,7 +82,7 @@ class SPBase(object):
             self.mpicomm = MPI.COMM_WORLD
         self.rank = self.mpicomm.Get_rank()
         self.n_proc = self.mpicomm.Get_size()
-        self.rank0 = rank0
+        self.rank0 = rank0 # not clear this should be anything other than 0 since self.rank is now within a comm
         self.rank_global = MPI.COMM_WORLD.Get_rank()
 
         global_toc("Initializing SPBase")
@@ -93,26 +93,26 @@ class SPBase(object):
 
         # Call various initialization methods
         if "branching_factors" in self.options:
-            self.branching_factors = self.options["branching_factors"]
+            self.branching_factors = self.options["branching_factors"] # BK: for the EF, do we even need branching_factors?
         else:
             self.branching_factors = [len(self.all_scenario_names)]
-        self.calculate_scenario_ranks()
-        self.attach_scenario_rank_maps()
+        self.calculate_scenario_ranks() # BK : uses branching_factors, all_scenario_names;  sets scenario_names_to_ranks, _rank_slices, _scenario_slices, and _scenario_tree attributes
+        self.attach_scenario_rank_maps() # BK : uses all_scenario_names, _rank_slices; sets local_scenario_names; depends on calculate_scenario_ranks 
         if "bundles_per_rank" in self.options and self.options["bundles_per_rank"] > 0:
-            self.assign_bundles()
+            self.assign_bundles() # BK : calculates bundles; uses all_scenario_names, _rank_slices, n_proc, rank, rank0; sets names_in_bundles
             self.bundling = True
         else:
             self.bundling = False
-        self.create_scenarios(cb_data)
-        self.look_before_leap_all()
-        self.compute_unconditional_node_probabilities()
-        self.attach_nlens()
-        self.attach_nonant_indexes()
-        self.attach_varid_to_nonant_index()
-        self.create_communicators()
-        self.set_sense()
-        self.set_multistage()
-        self.use_variable_probability_setter()
+        self.create_scenarios(cb_data) # BK : uses local_scenario_names, all_scenario_names, rank, rank0; sets local_scenarios, scenarios_constructed; Side-effect: adds probability to scenarios missing it
+        self.look_before_leap_all() # BK : uses local_scenarios; sets scenario._PySP_nonant_cache, scenario._PySP_fixedness_cache
+        self.compute_unconditional_node_probabilities() # BK : uses local_scenarios, scenario._PySPnode_list ; sets scenario._PySP_prob_coeff
+        self.attach_nlens() # BK : uses local_scenarios, scenario._PySPnode_list; sets scenario._PySP_nlens, scenario._PySP_cistart
+        self.attach_nonant_indexes() # BK : uses local_scenarios, scenario._PySPnode_list, scenario._PySP_nlens; sets scenario._nonant_indexes : map {(nodename, place in s._PySPnode_list) : nonant Pyomo Var}
+        self.attach_varid_to_nonant_index() # BK : uses local_scenarios, scenario._PySPnode_list, scenario._PySP_nlens; set scenario._varid_to_nonant_index : map { id(nonant Pyomo Var) : (nodename, place in s._PySPnode_list)}
+        self.create_communicators() # BK : uses local_scenario_names, local_scenarios, scenario._PySPnode_list, all_nodenames, mpicomm; populates comms dict
+        self.set_sense(); # BK : uses populated comms dict, rank, rank0; sets is_minimizing; raises RuntimeError if senses differ 
+        self.set_multistage() # BK : uses all_nodenames; sets multistage flag
+        self.use_variable_probability_setter() # BK : uses options, local_scenarios, variable_probably callback, scenario._varid_to_nonant_index, scenario._PySP_prob_coeff, scenario._PySP_nlens, rank, rank0, scenario._PySPnode_list; re-sets scenario._PySP_prob_coeff  
 
         ## SPCommunicator object
         self._spcomm = None
@@ -133,7 +133,7 @@ class SPBase(object):
         if self.n_proc <= 1:
             return
 
-        # Check that all the ranks agree
+        # Check that all the ranks agree # BK : I think there's a method/function somewhere that handles this more efficiently (allreduce_or) -- we could also be gathering numpy.unit8's here instead
         global_senses = self.comms["ROOT"].gather(is_min, root=self.rank0)
         if self.rank != self.rank0:
             return
@@ -164,13 +164,15 @@ class SPBase(object):
             4. self._scenario_tree (instance of sputils._ScenTree)
 
         """
+        # BK : I still think the way we deal with multistage models is somewhat obtuse -- doesn't mean I have a better suggestion
+        # BK : This entire function is unnecessary for EF
         tree = sputils._ScenTree(self.branching_factors, self.all_scenario_names)
 
         self.scenario_names_to_rank, self._rank_slices, self._scenario_slices =\
                 tree.scen_names_to_ranks(self.n_proc)
         self._scenario_tree = tree
 
-    def attach_scenario_rank_maps(self):
+    def attach_scenario_rank_maps(self): # BK : this function should be re-named; it clearly doesn't do this anymore
         """ Populate the following attribute
 
              1. self.local_scenario_names (list)
@@ -208,6 +210,7 @@ class SPBase(object):
             )
         slices = self._rank_slices
 
+        # BK : the name "curr_rank" here is confusing -- this goes over all ranks, I believe
         # dict: rank number --> list of scenario names owned by rank
         names_at_rank = {
             curr_rank: [self.all_scenario_names[i] for i in slc]
@@ -245,7 +248,7 @@ class SPBase(object):
         for sname in self.local_scenario_names:
             instance_creation_start_time = time.time()
             s = self.scenario_creator(sname, node_names=None, cb_data=cb_data)
-            if not hasattr(s, "PySP_prob"):
+            if not hasattr(s, "PySP_prob"): # BK : I wonder if this shouldn't be done somewhere else
                 s.PySP_prob = 1.0 / len(self.all_scenario_names)
             self.local_scenarios[sname] = s
             if "display_timing" in self.options and self.options["display_timing"]:
@@ -260,8 +263,9 @@ class SPBase(object):
         self.scenarios_constructed = True
 
     def attach_nonant_indexes(self):
+        # BK : docstring?
         for (sname, scenario) in self.local_scenarios.items():
-            _nonant_indexes = OrderedDict() #paranoia
+            _nonant_indexes = OrderedDict() #paranoia # BK : I don't think this is necessary as we support only Python 3.7+
             nlens = scenario._PySP_nlens        
             for node in scenario._PySPnode_list:
                 ndn = node.name
@@ -271,6 +275,8 @@ class SPBase(object):
 
             
     def attach_nlens(self):
+        # BK : docstring?
+        # BK : more generally: I wonder if we're dealing with the Pyomo/numpy interface correctly here. Couldn't _PySP_cistart be eliminated and we use the place in _nonant_indexes when exchanging whole vectors of nonant?
         for (sname, scenario) in self.local_scenarios.items():
             # Things need to be by node so we can bind to the
             # indexes of the vardata lists for the nodes.
@@ -288,6 +294,7 @@ class SPBase(object):
     def attach_varid_to_nonant_index(self):
         """ Create a map from the id of nonant variables to their Pyomo index.
         """
+        # BK : maybe this should be an exact reverse map of _nonant_indexes and built *as* as reverse map
         for (sname, scenario) in self.local_scenarios.items():
             # In order to support rho setting, create a map
             # from the id of vardata object back its _nonant_index.
@@ -352,7 +359,7 @@ class SPBase(object):
             root.uncond_prob = 1.0
             for parent,child in zip(s._PySPnode_list[:-1],s._PySPnode_list[1:]):
                 child.uncond_prob = parent.uncond_prob * child.cond_prob
-            if not hasattr(s, '_PySP_prob_coeff'):
+            if not hasattr(s, '_PySP_prob_coeff'): # BK : why are we checking for this here? Shouldn't it *not* existi?
                 s._PySP_prob_coeff = {}
                 for node in s._PySPnode_list:
                     s._PySP_prob_coeff[node.name] = (s.PySP_prob / node.uncond_prob)
@@ -390,6 +397,7 @@ class SPBase(object):
         self._check_variable_probabilities_sum(verbose)
 
     def _check_variable_probabilities_sum(self, verbose):
+        # BK : docstring?
 
         nodenames = [] # to transmit to comms
         local_concats = {}   # keys are tree node names
@@ -444,6 +452,8 @@ class SPBase(object):
                 raise RuntimeError("Model already has `internal' attribute" + attr)
 
     def look_before_leap_all(self):
+        # BK : docstring?
+        # BK : as discussed, we really should re-name lots of these and replace with a single `mpisppy` block
         for (sname, scenario) in self.local_scenarios.items():
             # TBD (Feb 2019) Take the caches and lists off the scenario
             self._look_before_leap(
@@ -473,7 +483,7 @@ class SPBase(object):
             scenario._PySP_nonant_cache = None
             scenario._PySP_fixedness_cache = None
 
-    def _options_check(self, required_options, given_options):
+    def _options_check(self, required_options, given_options): # BK : not called in SPBase; used in derived classes FWPH, EF, LShaped, PHBase
         """ Confirm that the specified list of options contains the specified
             list of required options. Raises a ValueError if anything is
             missing.
@@ -489,13 +499,13 @@ class SPBase(object):
         return self._spcomm()
 
     @spcomm.setter
-    def spcomm(self, value):
+    def spcomm(self, value): # BK : some basic protection for the spcomm attribute ; should other SPBase attributes also have some protection?
         if self._spcomm is None:
             self._spcomm = weakref.ref(value)
         else:
             raise RuntimeError("SPBase.spcomm should only be set once")
 
-    def get_var_value(self, scenario_name, variable_name, stage_number):
+    def get_var_value(self, scenario_name, variable_name, stage_number): # BK : not called anywhere (not even in examples)
         """ Get the value of the specified variable.
         Args:
             scenario_name (str):
@@ -532,7 +542,7 @@ class SPBase(object):
             )
         return variables[0].value
 
-    def gather_var_values_to_root(self):
+    def gather_var_values_to_root(self): # BK : only "called" in documenation
         """ Gather the values of the nonanticipative variables to the root of
         `mpicomm`.
 
