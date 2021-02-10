@@ -305,9 +305,17 @@ class SPBase(object):
 
 
     def create_communicators(self):
+        # BK : It would be easy in this function to check and see if
+        #      the nodes all have nonant_vardata_lists of the same length.
+        #      If you don't, you get an MPI error which may not be very
+        #      useful for diagnostics
+        # BK : I wonder if this method belongs in PHBase
+
         # If the scenarios have not been constructed yet, 
         # set up the one communicator we know this rank will have 
         # and return
+        # BK : I'm not sure this a good idea, or if we should raise
+        #       an exception
         if not self.local_scenario_names:
             self.comms["ROOT"] = self.mpicomm
             return
@@ -350,7 +358,6 @@ class SPBase(object):
                 scenario_names_to_comm_rank = self.scenario_names_to_rank[nodename]
                 if sname in scenario_names_to_comm_rank:
                     assert comm.Get_rank() == scenario_names_to_comm_rank[sname]
-
 
     def compute_unconditional_node_probabilities(self):
         """ calculates unconditional node probabilities and _PySP_prob_coeff """
