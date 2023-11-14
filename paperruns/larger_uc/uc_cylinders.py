@@ -94,6 +94,8 @@ def main():
                                   ph_extensions=MultiExtension,
                                   rho_setter = rho_setter)
 
+    hub_dict["opt_kwargs"]["options"]["display_timing"] = True
+
     # Extend and/or correct the vanilla dictionary
     ext_classes =  [Gapper]
     if fixer:
