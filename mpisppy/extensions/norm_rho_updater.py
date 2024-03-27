@@ -51,6 +51,7 @@ class NormRhoUpdater(mpisppy.extensions.extension.Extension):
         for s in ph.local_scenarios.values():
             for ndn_i, xbar in s._mpisppy_model.xbars.items():
                 self._prev_avg[ndn_i] = xbar.value
+            break
 
     def _compute_primal_residual_norm(self, ph):
 

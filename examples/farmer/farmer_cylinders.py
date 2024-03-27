@@ -13,6 +13,7 @@ from mpisppy.utils import config
 import mpisppy.utils.cfg_vanilla as vanilla
 
 from mpisppy.extensions.norm_rho_updater import NormRhoUpdater
+from mpisppy.extensions.acceleration import PHAcceleration
 from mpisppy.convergers.norm_rho_converger import NormRhoConverger
 from mpisppy.convergers.primal_dual_converger import PrimalDualConverger
 from mpisppy.utils.cfg_vanilla import extension_adder
@@ -107,6 +108,9 @@ def main():
                 'verbose': True,
                 'tol': cfg.primal_dual_converger_tol,
                 'tracking': True}
+
+    ## hack in PHAcceleration
+    #extension_adder(hub_dict, PHAcceleration)
 
     ## hack in adaptive rho
     if cfg.use_norm_rho_updater:
