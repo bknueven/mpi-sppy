@@ -611,6 +611,21 @@ class Config(pyofig.ConfigDict):
                               default=False)
 
 
+    def lr_cross_scenario_cuts_args(self):
+        # we will not try to get the specification from the command line
+
+        self.add_to_config('lr_cross_scenario_cuts',
+                              description="have a LR cross scenario cuts spoke",
+                              domain=bool,
+                              default=False)
+
+        self.add_to_config("cross_scenario_iter_cnt",
+                              description="cross scen check bound improve iterations "
+                              "(default 4)",
+                              domain=int,
+                              default=4)
+
+
     def cross_scenario_cuts_args(self):
         # we will not try to get the specification from the command line
 

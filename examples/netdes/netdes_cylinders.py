@@ -9,6 +9,7 @@ from mpisppy.spin_the_wheel import WheelSpinner
 from mpisppy.utils import config
 import mpisppy.utils.cfg_vanilla as vanilla
 from mpisppy.extensions.cross_scen_extension import CrossScenarioExtension
+from mpisppy.extensions.lr_cross_scenario_cuts import LRCrossScenarioCuts 
 
 write_solution = True
 
@@ -24,6 +25,7 @@ def _parse_args():
     cfg.xhatshuffle_args()
     cfg.slammax_args()
     cfg.cross_scenario_cuts_args()
+    cfg.lr_cross_scenario_cuts_args()
     cfg.add_to_config("instance_name",
                         description="netdes instance name (e.g., network-10-20-L-01)",
                         domain=str,
@@ -47,6 +49,7 @@ def main():
     lagrangian = cfg.lagrangian
     slammax = cfg.slammax
     cross_scenario_cuts = cfg.cross_scenario_cuts
+    lr_cross_scenario_cuts = cfg.lr_cross_scenario_cuts
 
     if cfg.default_rho is None:
         raise RuntimeError("The --default-rho option must be specified")
@@ -60,8 +63,13 @@ def main():
     # Things needed for vanilla cylinders
     beans = (cfg, scenario_creator, scenario_denouement, all_scenario_names)
 
+    if cross_scenario_cuts and lr_cross_scenario_cuts:
+        raise RuntimeError("Don't use both cross scenario cuts and LR cross scenario cuts")
+
     if cross_scenario_cuts:
         ph_ext = CrossScenarioExtension
+    elif lr_cross_scenario_cuts:
+        ph_ext = LRCrossScenarioCuts
     else:
         ph_ext = None
 
@@ -84,6 +92,12 @@ def main():
         lagrangian_spoke = vanilla.lagrangian_spoke(*beans,
                                               scenario_creator_kwargs=scenario_creator_kwargs,
                                               rho_setter = None)
+
+    # LR Cut Lagrangian bound spoke
+    if lr_cross_scenario_cuts:
+        lagrangian_cut_spoke = vanilla.lagrangian_cut_spoke(*beans,
+                                                scenario_creator_kwargs=scenario_creator_kwargs,
+                                                rho_setter = None)
         
     # xhat looper bound spoke
     if xhatlooper:
@@ -114,6 +128,8 @@ def main():
         list_of_spoke_dict.append(slammax_spoke)
     if cross_scenario_cuts:
         list_of_spoke_dict.append(cross_scenario_cuts_spoke)
+    if lr_cross_scenario_cuts:
+        list_of_spoke_dict.append(lagrangian_cut_spoke)
 
     wheel = WheelSpinner(hub_dict, list_of_spoke_dict)
     wheel.spin()

@@ -5,6 +5,7 @@ import numpy as np
 import pyomo.environ as pyo
 from pyomo.common.collections import ComponentSet
 from pyomo.core.expr.visitor import replace_expressions, identify_variables
+from pyomo.repn.standard_repn import generate_standard_repn
 from mpisppy.cylinders.lagrangian_bounder import LagrangianOuterBound
 from mpisppy.utils.sputils import is_persistent, find_active_objective
 from mpisppy import MPI
@@ -28,7 +29,7 @@ class LagrangianCutSpoke(LagrangianOuterBound):
         self.total_number_scenarios = len(self.opt.all_scenario_names)
 
                            #         send               
-                           # |S| * ( const + nonants )                           , 2 + nonants for every local scenaior
+                           # |S| * ( const + nonants )                           , 2 + nonants for every local scenario
         self._make_windows(
             # send bound + |S| * ( const + |nonants| )
             1 + self.total_number_scenarios * (1 + self.nonant_length),
@@ -45,15 +46,12 @@ class LagrangianCutSpoke(LagrangianOuterBound):
         self._bound = np.zeros(1 + self.total_number_scenarios * (1 + self.nonant_length) + 1)
 
     def lagrangian_prep(self):
-
         # TODO: want to extract the objective coefficients *HERE*
         #       before the Ws are attached in super().lagrangian_prep()
-
         # TODO: extract c (coefficients of nonants); send to hub??
         # TODO: maybe instead of using allgather we should just verify
         #       that the coefficients are the same in every node of the
         #       scenario tree.
-
         value = pyo.value
         self.c_vector = None
         for k, obj in self.opt.saved_objectives.items():
@@ -80,7 +78,7 @@ class LagrangianCutSpoke(LagrangianOuterBound):
 
             # TODO: for multistage this will need to be broken down by node
             c_vector_k = np.fromiter(
-                (ndn_id_to_coefs[var_idx] for var_id in varid_to_nonant_index),
+                (ndn_id_to_coefs[var_id] for var_id in varid_to_nonant_index),
                 dtype=float,
                 count=len(varid_to_nonant_index),
             )
@@ -103,17 +101,35 @@ class LagrangianCutSpoke(LagrangianOuterBound):
     def lagrangian(self):
         bound = super().lagrangian()
 
-        len_local_scenarios = len(self.opt.local_scenarios)
-        local_ws = np.zeros(len_local_scenarios * self.nonant_length)
-        self.opt._populate_W_cache(local_ws)
+        scenario_Ws_bound_slices = {}
+        for idx, sn in enumerate(self.opt.all_scenario_names):
+            scenario_Ws_bound_slices[sn] = slice(1 + idx*(self.nonant_length + 1), (1 + (idx+1)*(self.nonant_length + 1)))
 
-        local_outer_bounds = np.fromiter(
-            (s._mpisppy_data.outer_bound for s in self.opt.local_scenarios.values()),
-            dtype=float,
-            count=len_local_scenarios,
-        )
+        # NOTE: for *bundles* we would like to just do everything by scenario
+        #       This works fine if we use the actual objective function, but for
+        #       MIPs we would like to use the subproblem *bound*.
+        # NOTE: Can we just compute the gap (inner - outer) and distribute it to all the scenarios?
+        assert not self.opt.bundling
 
-        # TODO: use AllGather to collect the weights and bounds
-        #       for every scenario to send to the hub process
+        # populate the local portion of the vector
+        for sn, s in self.opt.local_scenarios.items():
+            sn_Ws_bound = self._bound[scenario_Ws_bound_slices[sn]] 
+            for ci, ix in enumerate(s._mpisppy_data.nonant_indices):
+                sn_Ws_bound[ci] = s._mpisppy_model.W[ix]._value
+            ci += 1
+            sn_Ws_bound[ci] = s._mpisppy_data.outer_bound
+            ci += 1
+            assert ci == len(sn_Ws_bound)
+            # TODO: not clear is this a good idea *here*
+            sn_Ws_bound[:-1] += self.c_vector
+            sn_Ws_bound *= s._mpisppy_probability
+
+
+        # TODO: We should probably convert this into an Allgatherv or Allreducev,
+        #       but proceeding by scenario is safer, and allows for easy indexing
+        #       if the scenarios are scattered across ranks in a weird way
+        for idx, sn in enumerate(self.opt.all_scenario_names):
+            source_rank = self.opt.scenario_names_to_rank["ROOT"][sn]
+            self.opt.comms["ROOT"].Bcast(self._bound[scenario_Ws_bound_slices[sn]], root=source_rank)
 
         return bound

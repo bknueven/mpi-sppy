@@ -26,11 +26,13 @@ from mpisppy.cylinders.xhatshufflelooper_bounder import XhatShuffleInnerBound
 from mpisppy.cylinders.lshaped_bounder import XhatLShapedInnerBound
 from mpisppy.cylinders.slam_heuristic import SlamMaxHeuristic, SlamMinHeuristic
 from mpisppy.cylinders.cross_scen_spoke import CrossScenarioCutSpoke
+from mpisppy.cylinders.lagrangian_cut_bounder import LagrangianCutSpoke
 from mpisppy.cylinders.hub import PHHub
 from mpisppy.cylinders.hub import APHHub
 from mpisppy.extensions.extension import MultiExtension
 from mpisppy.extensions.fixer import Fixer
 from mpisppy.extensions.cross_scen_extension import CrossScenarioExtension
+from mpisppy.extensions.lr_cross_scenario_cuts import LRCrossScenarioCuts
 from mpisppy.utils.wxbarreader import WXBarReader
 from mpisppy.utils.wxbarwriter import WXBarWriter
 
@@ -191,6 +193,15 @@ def add_cross_scenario_cuts(hub_dict,
                             ):
     #WARNING: Do not use without a cross_scenario_cuts spoke
     hub_dict = extension_adder(hub_dict, CrossScenarioExtension)
+    hub_dict["opt_kwargs"]["options"]["cross_scen_options"]\
+            = {"check_bound_improve_iterations" : cfg.cross_scenario_iter_cnt}
+    return hub_dict
+
+def add_lagrangian_cross_scenario_cuts(hub_dict,
+                            cfg,
+                            ):
+    #WARNING: Do not use without a lagrangian_cut_bounder spoke
+    hub_dict = extension_adder(hub_dict, LRCrossScenarioCuts)
     hub_dict["opt_kwargs"]["options"]["cross_scen_options"]\
             = {"check_bound_improve_iterations" : cfg.cross_scenario_iter_cnt}
     return hub_dict
@@ -387,6 +398,35 @@ def lagrangian_spoke(
 ):
     lagrangian_spoke = _PHBase_spoke_foundation(
         LagrangianOuterBound,
+        cfg,
+        scenario_creator,
+        scenario_denouement,
+        all_scenario_names,
+        scenario_creator_kwargs=scenario_creator_kwargs,
+        rho_setter=rho_setter,
+        all_nodenames=all_nodenames,
+    )
+    if cfg.lagrangian_iter0_mipgap is not None:
+        lagrangian_spoke["opt_kwargs"]["options"]["iter0_solver_options"]\
+            ["mipgap"] = cfg.lagrangian_iter0_mipgap
+    if cfg.lagrangian_iterk_mipgap is not None:
+        lagrangian_spoke["opt_kwargs"]["options"]["iterk_solver_options"]\
+            ["mipgap"] = cfg.lagrangian_iterk_mipgap
+    add_ph_tracking(lagrangian_spoke, cfg, spoke=True)
+
+    return lagrangian_spoke
+
+def lagrangian_cut_spoke(
+    cfg,
+    scenario_creator,
+    scenario_denouement,
+    all_scenario_names,
+    scenario_creator_kwargs=None,
+    rho_setter=None,
+    all_nodenames=None,
+):
+    lagrangian_spoke = _PHBase_spoke_foundation(
+        LagrangianCutSpoke,
         cfg,
         scenario_creator,
         scenario_denouement,

@@ -39,6 +39,8 @@ class LRCrossScenarioCuts(Extension):
         self.any_cuts = False
         self.iter_since_last_check = 0
 
+        self.last_outer_iter = -1
+
     def _disable_W_and_prox(self):
         assert self.reenable_W is None
         assert self.reenable_prox is None
@@ -112,7 +114,7 @@ class LRCrossScenarioCuts(Extension):
         else: 
             opt.mpicomm.Allreduce(local_ob, global_ob, op=mpi.MIN)
 
-        #print(f"CrossScenarioExtension OB: {global_ob[0]}")
+        #print(f"LRCrossScenarioCuts: {global_ob[0]}")
 
         opt.spcomm.BestOuterBound = opt.spcomm.OuterBoundUpdate(global_ob[0], char='C')
 
@@ -124,30 +126,11 @@ class LRCrossScenarioCuts(Extension):
         spcomm = self.opt.spcomm
         idx = self.cut_gen_spoke_index
         receive_buffer = np.empty(spcomm.remote_lengths[idx - 1] + 1, dtype="d") # Must be doubles
-        is_new = spcomm.hub_from_spoke(receive_buffer, idx)
-        if is_new:
-            self.make_cuts(receive_buffer)
-
-    def send_to_cross_cuts(self):
-        idx = self.cut_gen_spoke_index
-
-        # get the stuff we want to send
-        self.opt._save_nonants()
-        ci = 0  ## index to self.nonant_send_buffer
-
-        # get all the nonants
-        all_nonants_and_etas = self.all_nonants_and_etas
-        for k, s in self.opt.local_scenarios.items():
-            for xvar in s._mpisppy_data.nonant_indices.values():
-                all_nonants_and_etas[ci] = xvar._value
-                ci += 1
-
-        # get all the etas
-        for k, s in self.opt.local_scenarios.items():
-            for sn in self.opt.all_scenario_names:
-                all_nonants_and_etas[ci] = s._mpisppy_model.eta[sn]._value
-                ci += 1
-        self.opt.spcomm.hub_to_spoke(all_nonants_and_etas, idx)
+        spcomm.hub_from_spoke(receive_buffer, idx)
+        outer_iter = int(receive_buffer[-1])
+        if outer_iter > self.last_outer_iter:
+            self.last_outer_iter = outer_iter
+            self.make_cuts(receive_buffer[1:])
 
     def make_cuts(self, coefs):
         # take the coefficient array and assemble cuts accordingly
@@ -156,10 +139,15 @@ class LRCrossScenarioCuts(Extension):
         opt = self.opt
 
         # rows are:
-        # [ const, eta_coeff, *nonant_coeffs ]
-        row_len = 1+1+self.nonant_len
+        # [ *nonant_coeffs, const ]
+        row_len = self.nonant_len + 1
         outer_iter = int(coefs[-1])
 
+        # TODO: We should only add this cut if it cuts off the current \eta
+        #       we should probably also revisit and put cuts in a cut pool,
+        #       either not adding them or removing them entirely.
+        #       We should probably also just check for regular old domination --
+        #       some iterations of PH will be better / worse than others
         bundling = opt.bundling
         if opt.bundling:
             for bn,b in opt.local_subproblems.items():
@@ -168,24 +156,24 @@ class LRCrossScenarioCuts(Extension):
                 s = opt.local_scenarios[b.scen_list[0]]
                 for idx, k in enumerate(opt.all_scenario_names):
                     row = coefs[row_len*idx:row_len*(idx+1)]
-                    # the row could be all zeros,
-                    # which doesn't do anything
-                    if (row == 0.).all():
-                        continue
                     # rows are:
-                    # [ const, eta_coeff, *nonant_coeffs ]
-                    linear_const = row[0]
-                    linear_coefs = list(row[1:])
-                    linear_vars = [b._mpisppy_model.eta[k]]
+                    # [ *nonant_coeffs, const ]
+                    # cut is \eta_s >= const_s - nonant_coeffs^T_s nonants
+                    # cust is \eta_s + nonant_coeffs^T_s nonants >= const_s
+                    linear_coefs = list(row[:-1])
+                    linear_const = row[-1]
 
-                    for ndn_i in s._mpisppy_data.nonant_indices:
+                    linear_vars = []
+                    for var in s._mpisppy_data.nonant_indices.values():
                         ## for bundles, we add the constrains only
                         ## to the reference first stage variables
-                        linear_vars.append(b.ref_vars[ndn_i])
+                        linear_vars.append(var)
+                    linear_vars.append(b._mpisppy_model.eta[k])
+                    linear_coefs.append(1.0)
 
-                    cut_expr = LinearExpression(constant=linear_const, linear_coefs=linear_coefs,
+                    cut_expr = LinearExpression(constant=0.0, linear_coefs=linear_coefs,
                                                 linear_vars=linear_vars)
-                    b._mpisppy_model.benders_cuts[outer_iter, k] = (None, cut_expr, 0)
+                    b._mpisppy_model.benders_cuts[outer_iter, k] = (linear_const, cut_expr, None)
                     if persistent_solver:
                         b._solver_plugin.add_constraint(b._mpisppy_model.benders_cuts[outer_iter, k])
 
@@ -194,36 +182,39 @@ class LRCrossScenarioCuts(Extension):
                 persistent_solver = sputils.is_persistent(s._solver_plugin)
                 for idx, k in enumerate(opt.all_scenario_names):
                     row = coefs[row_len*idx:row_len*(idx+1)]
-                    # the row could be all zeros,
-                    # which doesn't do anything
-                    if (row == 0.).all():
-                        continue
                     # rows are:
-                    # [ const, eta_coeff, *nonant_coeffs ]
-                    linear_const = row[0]
-                    linear_coefs = list(row[1:])
-                    linear_vars = [s._mpisppy_model.eta[k]]
-                    linear_vars.extend(s._mpisppy_data.nonant_indices.values())
+                    # [ *nonant_coeffs, const ]
+                    # cut is \eta_s >= const_s - nonant_coeffs^T_s nonants
+                    # cust is \eta_s + nonant_coeffs^T_s nonants >= const_s
+                    linear_coefs = list(row[:-1])
+                    linear_const = row[-1]
 
-                    cut_expr = LinearExpression(constant=linear_const, linear_coefs=linear_coefs,
+                    linear_vars = []
+                    for var in s._mpisppy_data.nonant_indices.values():
+                        ## for bundles, we add the constrains only
+                        ## to the reference first stage variables
+                        linear_vars.append(var)
+                    linear_vars.append(s._mpisppy_model.eta[k])
+                    linear_coefs.append(1.0)
+
+                    cut_expr = LinearExpression(constant=0.0, linear_coefs=linear_coefs,
                                                 linear_vars=linear_vars)
-                    s._mpisppy_model.benders_cuts[outer_iter, k] = (None, cut_expr, 0.)
+                    #global_toc(f"{k}: {cut_expr}, const: {linear_const}")
+                    s._mpisppy_model.benders_cuts[outer_iter, k] = (linear_const, cut_expr, None)
                     if persistent_solver:
                         s._solver_plugin.add_constraint(s._mpisppy_model.benders_cuts[outer_iter, k])
 
-        # NOTE: the LShaped code negates the objective, so
-        #       we do the same here for consistency
         ib = self.opt.spcomm.BestInnerBound
         ob = self.opt.spcomm.BestOuterBound
-        if not opt.is_minimizing:
-            ib = -ib
-            ob = -ob
+        # TODO: maximization
         add_cut = (math.isfinite(ib) or math.isfinite(ob)) and \
                 ((ib < self.best_inner_bound) or (ob > self.best_outer_bound))
         if add_cut:
             self.best_inner_bound = ib
             self.best_outer_bound = ob
             for sn,s in opt.local_subproblems.items():
+                # TODO: we should have a var represending the EF_obj,
+                #       and just update its bounds based on current information
                 persistent_solver = sputils.is_persistent(s._solver_plugin)
                 prior_outer_iter = list(s._mpisppy_model.inner_bound_constr.keys())
                 s._mpisppy_model.inner_bound_constr[outer_iter] = (ob, s._mpisppy_model.EF_obj, ib)
@@ -253,11 +244,10 @@ class LRCrossScenarioCuts(Extension):
 
     def initialize_spoke_indices(self):
         for (i, spoke) in enumerate(self.opt.spcomm.spokes):
-            if spoke["spoke_class"] == CrossScenarioCutSpoke:
+            if spoke["spoke_class"] == LagrangianCutSpoke:
                 self.cut_gen_spoke_index = i + 1
 
     def sync_with_spokes(self):
-        self.send_to_cross_cuts()
         self.get_from_cross_cuts()
 
     def pre_iter0(self):
@@ -271,18 +261,11 @@ class LRCrossScenarioCuts(Extension):
         opt = self.opt
         # NOTE: the LShaped code negates the objective, so
         #       we do the same here for consistency
-        if 'cross_scen_options' in opt.options and \
-                'valid_eta_bound' in opt.options['cross_scen_options']:
-            valid_eta_bound = opt.options['cross_scen_options']['valid_eta_bound']
-            if not opt.is_minimizing:
-                _eta_init = { k: -v for k,v in valid_eta_bound.items() }
-            else:
-                _eta_init = valid_eta_bound
-            _eta_bounds = lambda m,k : (_eta_init[k], None)
-        else:
-            lb = (-sys.maxsize - 1) * 1. / len(opt.all_scenario_names)
-            _eta_init = lambda m,k : lb
-            _eta_bounds = lambda m,k : (lb, None)
+        # we'll get valid bounds at the first iteration, so
+        # do not worry about it excessively
+        lb = (-sys.maxsize - 1) * 1. / len(opt.all_scenario_names)
+        _eta_init = lambda m,k : lb
+        _eta_bounds = lambda m,k : (lb, None)
 
         # eta is attached to each subproblem, regardless of bundles
         bundling = opt.bundling
@@ -301,7 +284,7 @@ class LRCrossScenarioCuts(Extension):
         
         for k,s in opt.local_subproblems.items():
 
-            obj = find_active_objective(s)
+            obj = opt.saved_objectives[k]
 
             repn = generate_standard_repn(obj.expr, quadratic=True)
             if len(repn.nonlinear_vars) > 0:
@@ -339,14 +322,6 @@ class LRCrossScenarioCuts(Extension):
                 elif id(y) not in nonant_ids:
                     quadratic_coefs[i] *= scen_prob
 
-            # NOTE: the LShaped code negates the objective, so
-            #       we do the same here for consistency
-            if not opt.is_minimizing:
-                for i,coef in enumerate(linear_coefs):
-                    linear_coefs[i] = -coef
-                for i,coef in enumerate(quadratic_coefs):
-                    quadratic_coefs[i] = -coef
-
             # add the other etas
             if bundling:
                 these_scenarios = set(s.scen_list)
@@ -370,10 +345,8 @@ class LRCrossScenarioCuts(Extension):
 
             s._mpisppy_model.EF_obj = pyo.Expression(expr=expr)
 
-            if opt.is_minimizing:
-                s._mpisppy_model.EF_Obj = pyo.Objective(expr=s._mpisppy_model.EF_obj, sense=pyo.minimize)
-            else:
-                s._mpisppy_model.EF_Obj = pyo.Objective(expr=-s._mpisppy_model.EF_obj, sense=pyo.maximize)
+            # TODO: handle maximization
+            s._mpisppy_model.EF_Obj = pyo.Objective(expr=s._mpisppy_model.EF_obj, sense=pyo.minimize)
             s._mpisppy_model.EF_Obj.deactivate()
 
             # add cut constraint dicts
@@ -409,12 +382,15 @@ class LRCrossScenarioCuts(Extension):
 
         ## if its the second time or more with this IB, we'll only check
         ## if the last improved the OB, or if the OB is new itself (from somewhere else)
+        # TODO: this needs improvement for LR cuts--although maybe it should just
+        #       be its own spoke
         check = (self.check_bound_iterations is not None) and self.any_cuts and ( \
                 (self.iter_at_cur_ib == self.check_bound_iterations) or \
                 (self.iter_at_cur_ib > self.check_bound_iterations and ob_new) or \
                 ((self.iter_since_last_check%self.check_bound_iterations == 0) and self.new_cuts))
                 # if there hasn't been OB movement, check every so often if we have new cuts
-        if check:
+        #if check:
+        if True:
             self._check_bound()
             self.new_cuts = False
             self.iter_since_last_check = 0
