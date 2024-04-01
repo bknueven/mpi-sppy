@@ -34,6 +34,7 @@ class CrossScenarioCutSpoke(spoke.Spoke):
 
         # local, remote
         # send, receive
+                        # |S| * ( nonants + eta_coeff + const ), ( |S| * ( eta_vals ) + nonants for every scenario )
         self._make_windows(nscen*(self.nonant_per_scen + 1 + 1), nscen*local_scen_count + vbuflen)
 
     def _got_kill_signal(self):
