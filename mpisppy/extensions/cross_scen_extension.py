@@ -188,6 +188,7 @@ class CrossScenarioExtension(Extension):
                     b._mpisppy_model.benders_cuts[outer_iter, k] = (None, cut_expr, 0)
                     if persistent_solver:
                         b._solver_plugin.add_constraint(b._mpisppy_model.benders_cuts[outer_iter, k])
+                self._manage_cuts(b, b._mpisppy_model.benders_cuts)
 
         else:
             for sn,s in opt.local_subproblems.items():
@@ -210,6 +211,7 @@ class CrossScenarioExtension(Extension):
                     s._mpisppy_model.benders_cuts[outer_iter, k] = (None, cut_expr, 0.)
                     if persistent_solver:
                         s._solver_plugin.add_constraint(s._mpisppy_model.benders_cuts[outer_iter, k])
+                self._manage_cuts(s, s._mpisppy_model.benders_cuts)
 
         # NOTE: the LShaped code negates the objective, so
         #       we do the same here for consistency
@@ -237,6 +239,21 @@ class CrossScenarioExtension(Extension):
 
         ## helping the extention track cuts
         self.new_cuts = True
+
+    def _manage_cuts(self, s, cuts):
+        persistent_solver = sputils.is_persistent(s._solver_plugin)
+
+        for c in cuts.values():
+            if c.active:
+                if c.slack() > 1e-4:
+                    c.deactivate()
+                    if persistent_solver:
+                        s._solver_plugin.remove_constraint(c)
+            else:
+                if c.slack() < -1e-6:
+                    c.activate()
+                    if persistent_solver:
+                        s._solver_plugin.add_constraint(c)
 
     def setup_hub(self):
         idx = self.cut_gen_spoke_index
@@ -414,7 +431,8 @@ class CrossScenarioExtension(Extension):
                 (self.iter_at_cur_ib > self.check_bound_iterations and ob_new) or \
                 ((self.iter_since_last_check%self.check_bound_iterations == 0) and self.new_cuts))
                 # if there hasn't been OB movement, check every so often if we have new cuts
-        if check:
+        #if check:
+        if True:
             self._check_bound()
             self.new_cuts = False
             self.iter_since_last_check = 0
