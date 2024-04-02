@@ -176,6 +176,7 @@ class LRCrossScenarioCuts(Extension):
                     b._mpisppy_model.benders_cuts[outer_iter, k] = (linear_const, cut_expr, None)
                     if persistent_solver:
                         b._solver_plugin.add_constraint(b._mpisppy_model.benders_cuts[outer_iter, k])
+                self._manage_cuts(b, b._mpisppy_model.benders_cuts)
 
         else:
             for sn,s in opt.local_subproblems.items():
@@ -203,15 +204,19 @@ class LRCrossScenarioCuts(Extension):
                     s._mpisppy_model.benders_cuts[outer_iter, k] = (linear_const, cut_expr, None)
                     if persistent_solver:
                         s._solver_plugin.add_constraint(s._mpisppy_model.benders_cuts[outer_iter, k])
+                self._manage_cuts(s, s._mpisppy_model.benders_cuts)
 
         ib = self.opt.spcomm.BestInnerBound
         ob = self.opt.spcomm.BestOuterBound
         # TODO: maximization
         add_cut = (math.isfinite(ib) or math.isfinite(ob)) and \
                 ((ib < self.best_inner_bound) or (ob > self.best_outer_bound))
+        # add_cut = (math.isfinite(ib)) and \
+        #          ((ib < self.best_inner_bound))
         if add_cut:
             self.best_inner_bound = ib
             self.best_outer_bound = ob
+            global_toc(f"ib: {ib}, ob: {ob}")
             for sn,s in opt.local_subproblems.items():
                 # TODO: we should have a var represending the EF_obj,
                 #       and just update its bounds based on current information
@@ -228,6 +233,22 @@ class LRCrossScenarioCuts(Extension):
 
         ## helping the extention track cuts
         self.new_cuts = True
+
+    def _manage_cuts(self, s, cuts):
+        persistent_solver = sputils.is_persistent(s._solver_plugin)
+
+        for c in cuts.values():
+            if c.active:
+                if c.slack() > 1e-2:
+                    c.deactivate()
+                    if persistent_solver:
+                        s._solver_plugin.remove_constraint(c)
+            else:
+                if c.slack() < 0:
+                    c.activate()
+                    if persistent_solver:
+                        s._solver_plugin.add_constraint(c)
+
 
     def setup_hub(self):
         idx = self.cut_gen_spoke_index
