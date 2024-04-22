@@ -249,11 +249,11 @@ class CrossScenarioExtension(Extension):
                     c.deactivate()
                     if persistent_solver:
                         s._solver_plugin.remove_constraint(c)
-            else:
-                if c.slack() < -1e-6:
-                    c.activate()
-                    if persistent_solver:
-                        s._solver_plugin.add_constraint(c)
+            #else:
+            #    if c.slack() < -1e-6:
+            #        c.activate()
+            #        if persistent_solver:
+            #            s._solver_plugin.add_constraint(c)
 
     def setup_hub(self):
         idx = self.cut_gen_spoke_index
