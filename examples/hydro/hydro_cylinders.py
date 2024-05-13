@@ -24,6 +24,7 @@ def _parse_args():
     cfg.xhatlooper_args()
     cfg.xhatshuffle_args()
     cfg.lagrangian_args()
+    cfg.subgradient_args()
     cfg.xhatspecific_args()
 
     cfg.add_to_config(name ="stage2EFsolvern",

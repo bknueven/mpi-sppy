@@ -20,6 +20,7 @@ def main():
 
     xhatshuffle = cfg.xhatshuffle
     lagrangian = cfg.lagrangian
+    subgradient = cfg.subgradient
 
     # This is multi-stage, so we need to supply node names
     hydro = PySPModel("./PySP/models/", "./PySP/nodedata/")
@@ -40,6 +41,11 @@ def main():
                                               rho_setter = rho_setter,
                                               all_nodenames=hydro.all_nodenames)
 
+    if subgradient:
+        subgradient_spoke = vanilla.subgradient_spoke(*beans,
+                                              rho_setter = rho_setter,
+                                              all_nodenames=hydro.all_nodenames)
+
     if xhatshuffle:
         xhatshuffle_spoke = vanilla.xhatshuffle_spoke(*beans,
                                                       hydro.all_nodenames)
@@ -47,6 +53,8 @@ def main():
     list_of_spoke_dict = list()
     if lagrangian:
         list_of_spoke_dict.append(lagrangian_spoke)
+    if subgradient:
+        list_of_spoke_dict.append(subgradient_spoke)
     if xhatshuffle:
         list_of_spoke_dict.append(xhatshuffle_spoke)
 

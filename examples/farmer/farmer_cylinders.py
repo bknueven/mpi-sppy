@@ -32,6 +32,7 @@ def _parse_args():
     cfg.fwph_args()
     cfg.lagrangian_args()
     cfg.lagranger_args()
+    cfg.subgradient_args()
     cfg.ph_ob_args()
     cfg.xhatshuffle_args()
     cfg.converger_args()
@@ -123,6 +124,11 @@ def main():
                                               scenario_creator_kwargs=scenario_creator_kwargs,
                                               rho_setter = rho_setter)
 
+    if cfg.subgradient:
+        subgradient_spoke = vanilla.subgradient_spoke(*beans,
+                                              scenario_creator_kwargs=scenario_creator_kwargs,
+                                              rho_setter = rho_setter)
+
     # Special Lagranger bound spoke
     if cfg.lagranger:
         lagranger_spoke = vanilla.lagranger_spoke(*beans,
@@ -147,6 +153,8 @@ def main():
         list_of_spoke_dict.append(fw_spoke)
     if cfg.lagrangian:
         list_of_spoke_dict.append(lagrangian_spoke)
+    if cfg.subgradient:
+        list_of_spoke_dict.append(subgradient_spoke)
     if cfg.lagranger:
         list_of_spoke_dict.append(lagranger_spoke)
     if cfg.ph_ob:
