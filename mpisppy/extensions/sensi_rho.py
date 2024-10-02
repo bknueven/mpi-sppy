@@ -11,7 +11,7 @@ import numpy as np
 from mpisppy import global_toc
 import mpisppy.extensions.dyn_rho_base
 import mpisppy.MPI as MPI
-from mpisppy.utils.nonant_sensitivities import nonant_sensitivies
+from mpisppy.utils.nonant_sensitivities import nonant_sensitivities
 
 
 class SensiRho(mpisppy.extensions.dyn_rho_base.Dyn_Rho_extension_base):
@@ -140,7 +140,7 @@ class SensiRho(mpisppy.extensions.dyn_rho_base.Dyn_Rho_extension_base):
 
         nonant_sensis = dict()  # dict of dicts [s][ndn_i]
         for k, s in ph.local_subproblems.items():
-            nonant_sensis[s] = nonant_sensitivies(s, ph)
+            nonant_sensis[s] = nonant_sensitivities(s, ph)
                 
         for s in ph.local_scenarios.values():
             xbars = s._mpisppy_model.xbars
