@@ -12,15 +12,14 @@
 # See LICENSE.md in this directory for full copyright and license information.
 ###############################################################################
 
-from pyomo.contrib.pynumero.interfaces import pyomo_nlp
 from pyomo.contrib.pynumero.sparse import BlockMatrix, BlockVector
 import numpy as np
 import scipy.sparse
 from pyomo.common.timing import HierarchicalTimer
 
 class InteriorPointInterface:
-    def __init__(self, pyomo_model):
-        self._nlp = pyomo_nlp.PyomoNLP(pyomo_model, nl_file_options={'skip_trivial_constraints': True})
+    def __init__(self, pyomo_nlp):
+        self._nlp = pyomo_nlp
 
         self.bounds_relaxation_factor = 0
 

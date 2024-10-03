@@ -10,10 +10,12 @@
 import numpy as np
 
 import pyomo.environ as pyo
+from pyomo.contrib.pynumero.interfaces import pyomo_nlp
 from pyomo.contrib.pynumero.linalg.scipy_interface import ScipyLU
 
-from mpisppy.utils.kkt.interface import InteriorPointInterface
-
+from pyomo.contrib.pynumero.sparse import BlockMatrix, BlockVector
+from scipy.sparse import identity
+from scipy.sparse.linalg import spsolve
 
 def nonant_sensitivities(s, ph):
     """Compute the sensitivities of noants (w.r.t. the Lagrangian for s)
@@ -51,7 +53,7 @@ def _ph_var_source(s, ph):
             yield (ndn_i, v)
 
 
-def _compute_primal_sensitivities(model, var_source):
+def _compute_primal_sensitivities(model, var_source, active_constr_tol=1e-6):
     """Compute the sensitivities of the vars in var_source
     (w.r.t the Lagrangian for mdoel)
     Args:
@@ -61,46 +63,49 @@ def _compute_primal_sensitivities(model, var_source):
     Returns:
         primal_sensitivities (dict): (key, sensitivity) for each var in var_source.
     """
-    # first, solve the subproblems with Ipopt,
-    # and gather sensitivity information
-    ipopt = pyo.SolverFactory("ipopt")
 
-    # add the needed suffixes / remove later
-    # TODO: keep the suffix and restore its value if it already exists
-    model.ipopt_zL_out = pyo.Suffix(direction=pyo.Suffix.IMPORT)
-    model.ipopt_zU_out = pyo.Suffix(direction=pyo.Suffix.IMPORT)
-    model.dual = pyo.Suffix(direction=pyo.Suffix.IMPORT_EXPORT)
+    slack_suffix = model.component("slack")
+    if not slack_suffix or slack_suffix.ctype is not pyo.Suffix:
+        raise RuntimeError(f"_compute_primal_sensitivities needs a slack Suffix")
 
-    results = ipopt.solve(model)
-    pyo.assert_optimal_termination(results)
+    nlp = pyomo_nlp.PyomoNLP(model, nl_file_options={'skip_trivial_constraints': True})
 
-    kkt_builder = InteriorPointInterface(model)
-    kkt_builder.set_barrier_parameter(1e-9)
-    kkt_builder.set_bounds_relaxation_factor(1e-8)
-    # rhs = kkt_builder.evaluate_primal_dual_kkt_rhs()
-    # print(f"{rhs}")
-    # print(f"{rhs.flatten()}")
-    kkt = kkt_builder.evaluate_primal_dual_kkt_matrix()
+    x = nlp.init_primals()
+    nlp.set_primals(x)
+    jac = nlp.evaluate_jacobian().tocsr()
 
-    # print(f"{kkt=}")
-    # could do better than SuperLU
+    # equality constraints are always active
+    row_indices = list(nlp._condata_to_eq_idx.values())
+    # get the active inequality constraints
+    for c, i in nlp._condata_to_ineq_idx.items():
+        if abs(slack_suffix[c]) <= active_constr_tol:
+            row_indices.append(i)
+
+    jac = jac[row_indices]
+
+    nx = jac.shape[1]
+    assert nx == nlp.n_primals()
+    nc = jac.shape[0]
+    kkt = BlockMatrix(2,2)
+
+    kkt.set_block(0, 0, identity(nx))
+    kkt.set_block(1, 0, -jac)
+    kkt.set_block(0, 1, jac.transpose())
+    kkt.set_block(1, 1, -1e-08 * identity(nc))
+
     kkt_lu = ScipyLU()
-    # always regularize equality constraints
-    kkt_builder.regularize_equality_gradient(kkt=kkt, coef=-1e-8, copy_kkt=False)
-    # always regularize the Hessian too
-    kkt_builder.regularize_hessian(kkt=kkt, coef=1e-8, copy_kkt=False)
     kkt_lu.do_numeric_factorization(kkt, raise_on_error=True)
 
     grad_vec = np.zeros(kkt.shape[1])
-    grad_vec[0 : kkt_builder._nlp.n_primals()] = (
-        kkt_builder._nlp.evaluate_grad_objective()
+    grad_vec[0 : nx] = (
+        nlp.evaluate_grad_objective()
     )
 
     grad_vec_kkt_inv = kkt_lu._lu.solve(grad_vec, "T")
 
     primal_sensitivities = {}
     for key, var in var_source:
-        var_idx = kkt_builder._nlp._vardata_to_idx[var]
+        var_idx = nlp._vardata_to_idx[var]
 
         y_vec = np.zeros(kkt.shape[0])
         y_vec[var_idx] = 1.0
@@ -110,9 +115,5 @@ def _compute_primal_sensitivities(model, var_source):
         e_x = x * y_vec
 
         primal_sensitivities[key] = grad_vec_kkt_inv @ -e_x
-
-    del model.ipopt_zL_out
-    del model.ipopt_zU_out
-    del model.dual
 
     return primal_sensitivities

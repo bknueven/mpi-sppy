@@ -24,11 +24,15 @@ def test_DLW_example():
 
     var_source = [("x", model.x), ("y", model.y)]
 
+    model.slack = pyo.Suffix(direction=pyo.Suffix.IMPORT)
+
     for bval in (12, 20):
         model.b.value = bval
         # feasible solution
         model.y.value = bval
         model.x.value = bval
+        model.slack[model.x_ge_y] = 0
+        model.slack[model.y_ge_b] = 0
 
         sensis = ns._compute_primal_sensitivities(model, var_source)
 
@@ -104,7 +108,8 @@ def test_1UC_problem():
     m = _1UC_problem(3.5)
     m.u.domain = pyo.UnitInterval
     # solve the relaxed problem
-    result = pyo.SolverFactory("cbc").solve(m)
+    m.slack = pyo.Suffix(direction=pyo.Suffix.IMPORT)
+    result = pyo.SolverFactory("xpress").solve(m)
     pyo.assert_optimal_termination(result)
 
     result = ns._compute_primal_sensitivities(m, ((u.name, u) for u in m.u.values()))
@@ -115,8 +120,9 @@ def test_1UC_problem():
 
 def test_1ED_problem():
     m = _1ED_problem(3.5)
+    m.slack = pyo.Suffix(direction=pyo.Suffix.IMPORT)
 
-    result = pyo.SolverFactory("cbc").solve(m)
+    result = pyo.SolverFactory("xpress").solve(m)
     pyo.assert_optimal_termination(result)
 
     result = ns._compute_primal_sensitivities(
