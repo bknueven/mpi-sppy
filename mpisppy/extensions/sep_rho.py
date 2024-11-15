@@ -152,13 +152,16 @@ class SepRho(mpisppy.extensions.dyn_rho_base.Dyn_Rho_extension_base):
         for s in ph.local_scenarios.values():
             cc = self.nonant_cost_coeffs(s)
             for ndn_i, rho in s._mpisppy_model.rho.items():
-                if cc[ndn_i] != 0:
-                    nv = s._mpisppy_data.nonant_indices[ndn_i]  # var_data object
+                nv = s._mpisppy_data.nonant_indices[ndn_i]  # var_data object
+                cc_nv = cc[id(nv)]
+                if cc_nv != 0:
                     if nv.is_integer():
                         rho._value = abs(cc[ndn_i]) / (xmax[ndn_i] - xmin[ndn_i] + 1)
                     else:
                         rho._value = abs(cc[ndn_i]) / max(1, primal_resid[ndn_i])
                     rho._value *= self.multiplier
+                if ph.cylinder_rank == 0:
+                    print(f"{nv.name}, rho={rho._value}")
 
     def compute_and_update_rho(self):
         self._compute_and_update_rho()

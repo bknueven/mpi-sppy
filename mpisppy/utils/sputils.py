@@ -968,20 +968,19 @@ def find_objective(pyomomodel, active=False):
 
 def nonant_cost_coeffs(s):
     """
-    return a dictionary from s._mpisppy_data.nonant_indices.keys()
-    to the objective cost coefficient
+    return a dictionary from the varid to the objective cost coefficient
     """
     objective = find_objective(s)
 
     # initialize to 0
-    cost_coefs = {ndn_i: 0 for ndn_i in s._mpisppy_data.nonant_indices}
+    cost_coefs = {id(v): 0 for v in s._mpisppy_data.nonant_indices.values()}
     repn = generate_standard_repn(objective.expr, quadratic=False)
     for coef, var in zip(repn.linear_coefs, repn.linear_vars):
-        if id(var) in s._mpisppy_data.varid_to_nonant_index:
-            cost_coefs[s._mpisppy_data.varid_to_nonant_index[id(var)]] = coef
+        if id(var) in cost_coefs:
+            cost_coefs[id(var)] = coef
 
     for var in repn.nonlinear_vars:
-        if id(var) in s._mpisppy_data.varid_to_nonant_index:
+        if id(var) in cost_coefs:
             raise RuntimeError(
                 "Found nonlinear variables in the objective function. "
                 f"Variable {var} has nonlinear interactions in the objective funtion"
