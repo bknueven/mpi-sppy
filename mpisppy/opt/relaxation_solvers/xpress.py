@@ -24,12 +24,13 @@ class XpressRelaxationSolver(XpressPersistent):
         # when the root node is finished processing
         #node = xpress_problem.attributes.currentnode
         #print("NodeOptimal: node number", node)
-        #objval = xpress_problem.attributes.lpobjval
+        objval = xpress_problem.attributes.lpobjval
         #print("Objective function value =", objval)
         # TODO: could get duals, rc, and slacks too
         sol = []
         xpress_problem.getlpsol(x=sol)
         self._relaxation_solution = sol
+        self._relaxation_value = objval
 
         # print(f"{self._relaxation_solution=}")
 
@@ -41,6 +42,7 @@ class XpressRelaxationSolver(XpressPersistent):
         xpress_problem = self._solver_model
         xpress_problem.addcboptnode(XpressRelaxationSolver.get_root_node_solution, self, 0)
         self._relaxation_solution = None
+        self._relaxation_value = None
 
     def _apply_solver(self):
         self.set_xpress_callback()
@@ -81,6 +83,11 @@ class XpressRelaxationSolver(XpressPersistent):
             )
             results.solver.termination_condition = TerminationCondition.other
             soln.status = SolutionStatus.feasible
+            xprob_attrs = self._solver_model.attributes
+            if xprob_attrs.objsense == 1.0:  # minimizing MIP
+                results.problem.lower_bound = self._relaxation_value
+            elif xprob_attrs.objsense == -1.0:  # maximizing MIP
+                results.problem.upper_bound = self._relaxation_value
             return True
         return False
 

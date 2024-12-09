@@ -25,6 +25,7 @@ from mpisppy.extensions.fixer import Fixer
 from mpisppy.extensions.mipgapper import Gapper
 from mpisppy.extensions.gradient_extension import Gradient_extension
 import mpisppy.utils.solver_spec as solver_spec
+import mpisppy.opt.relaxation_solvers.xpress
 from mpisppy import global_toc
 from mpisppy import MPI
 

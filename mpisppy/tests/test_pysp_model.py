@@ -1,4 +1,4 @@
-##############################################################################
+###############################################################################
 # mpi-sppy: MPI-based Stochastic Programming in PYthon
 #
 # Copyright (c) 2024, Lawrence Livermore National Security, LLC, Alliance for
