@@ -14,18 +14,17 @@ from pyomo.solvers.plugins.solvers.xpress_persistent import XpressPersistent
 
 @SolverFactory.register(
     "mip-dual-xpress",
-    doc="XpressPersistent, but load the best relaxation solution from the root MIP node"
+    doc="XpressPersistent, but load the best relaxation solution from the root MIP node",
 )
 class XpressRelaxationSolver(XpressPersistent):
-
     @staticmethod
     def get_root_node_solution(xpress_problem, self):
         print("here!")
         # when the root node is finished processing
-        #node = xpress_problem.attributes.currentnode
-        #print("NodeOptimal: node number", node)
+        # node = xpress_problem.attributes.currentnode
+        # print("NodeOptimal: node number", node)
         objval = xpress_problem.attributes.lpobjval
-        #print("Objective function value =", objval)
+        # print("Objective function value =", objval)
         # TODO: could get duals, rc, and slacks too
         sol = []
         xpress_problem.getlpsol(x=sol)
@@ -40,15 +39,29 @@ class XpressRelaxationSolver(XpressPersistent):
 
     def set_xpress_callback(self):
         xpress_problem = self._solver_model
-        xpress_problem.addcboptnode(XpressRelaxationSolver.get_root_node_solution, self, 0)
+        xpress_problem.addcboptnode(
+            XpressRelaxationSolver.get_root_node_solution, self, 0
+        )
         self._relaxation_solution = None
         self._relaxation_value = None
 
     def _apply_solver(self):
+        xprob = self._solver_model
+        is_mip = (xprob.attributes.mipents > 0) or (xprob.attributes.sets > 0)
+        if not is_mip:
+            return super()._apply_solver()
         self.set_xpress_callback()
         # turn off heuristics
         if self.options.heuremphasis is None:
             self.options.heuremphasis = 0
+        if self.options.presolveops is None:
+            # This turns off IP presolve, which will linearize quadratic terms.
+            # This is an excellent idea for the primal, but makes the dual invalid
+            #                               1111 1111 1100 0000 0000
+            #                               9876 5432 1098 7654 3210
+            self.options.presolveops = int("0000_0000_0011_1111_1111", 2)
+        if self.options.cutstrategy is None:
+            self.options.cutstrategy = 3
         return super()._apply_solver()
 
     # TODO
@@ -60,14 +73,16 @@ class XpressRelaxationSolver(XpressPersistent):
         # overwrite some attributes
         if self._save_results:
             self._save_results = False
-            print(f"WARNING: Not saving results. Use {self.__class__.__name__}.load_vars() to load a relaxed primal solution")
-        load_solutions = False 
+            print(
+                f"WARNING: Not saving results. Use {self.__class__.__name__}.load_vars() to load a relaxed primal solution"
+            )
+        load_solutions = False
         if self._load_solutions:
             # don't load the solution using
             # the base class method; use
             # our own methoe
             self._load_solutions = False
-            load_solutions = True 
+            load_solutions = True
         # loads the bounds, which are important
         super()._get_mip_results(results, soln)
         if self._relaxation_solution is not None:
@@ -93,11 +108,19 @@ class XpressRelaxationSolver(XpressPersistent):
 
     def _postsolve(self):
         ret = super()._postsolve()
+        xprob = self._solver_model
+        is_mip = (xprob.attributes.mipents > 0) or (xprob.attributes.sets > 0)
+        if not is_mip:
+            return ret
         if self._relaxation_solution is not None:
             self.results.problem.number_of_solutions = 1
         return ret
 
     def _load_vars(self, vars_to_load=None):
+        xprob = self._solver_model
+        is_mip = (xprob.attributes.mipents > 0) or (xprob.attributes.sets > 0)
+        if not is_mip:
+            return super()._load_vars(vars_to_load=vars_to_load)
         assert self._relaxation_solution is not None
         if vars_to_load is not None:
             print("WARNING: loading all the variable values")
@@ -114,10 +137,22 @@ class XpressRelaxationSolver(XpressPersistent):
                 pyo_var.set_value(val, skip_validation=True)
 
     def _load_rc(self, vars_to_load=None):
-        print(f"Cannot extract reduced costs from relaxed MIP solution")
+        xprob = self._solver_model
+        is_mip = (xprob.attributes.mipents > 0) or (xprob.attributes.sets > 0)
+        if not is_mip:
+            return super()._load_rc(vars_to_load=vars_to_load)
+        print("Cannot extract reduced costs from relaxed MIP solution")
 
     def _load_duals(self, cons_to_load=None):
-        print(f"Cannot extract duals from relaxed MIP solution")
+        xprob = self._solver_model
+        is_mip = (xprob.attributes.mipents > 0) or (xprob.attributes.sets > 0)
+        if not is_mip:
+            return super()._load_duals(cons_to_load=cons_to_load)
+        print("Cannot extract duals from relaxed MIP solution")
 
     def _load_slacks(self, cons_to_load=None):
-        print(f"Cannot extract slacks from relaxed MIP solution")
+        xprob = self._solver_model
+        is_mip = (xprob.attributes.mipents > 0) or (xprob.attributes.sets > 0)
+        if not is_mip:
+            return super()._load_slacks(cons_to_load=cons_to_load)
+        print("Cannot extract slacks from relaxed MIP solution")
