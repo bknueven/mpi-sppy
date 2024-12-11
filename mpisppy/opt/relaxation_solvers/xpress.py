@@ -19,21 +19,17 @@ from pyomo.solvers.plugins.solvers.xpress_persistent import XpressPersistent
 class XpressRelaxationSolver(XpressPersistent):
     @staticmethod
     def get_root_node_solution(xpress_problem, self):
-        print("here!")
         # when the root node is finished processing
         # node = xpress_problem.attributes.currentnode
-        # print("NodeOptimal: node number", node)
+        # print(f"in cboptnode, node number {node}")
         objval = xpress_problem.attributes.lpobjval
-        # print("Objective function value =", objval)
+        # print(f"objective function value {objval}")
         # TODO: could get duals, rc, and slacks too
         sol = []
         xpress_problem.getlpsol(x=sol)
         self._relaxation_solution = sol
         self._relaxation_value = objval
 
-        # print(f"{self._relaxation_solution=}")
-
-        # TODO: put solution into self._relaxation_solution
         # returning 1 tells the solver to terminate
         return 1
 
@@ -62,9 +58,15 @@ class XpressRelaxationSolver(XpressPersistent):
             self.options.presolveops = int("0000_0000_0011_1111_1111", 2)
         if self.options.cutstrategy is None:
             self.options.cutstrategy = 3
+        # TODO: consider giving the user better
+        #       direct control over the number
+        #       of cut passes
+        # if self.options.covercuts is None:
+        #     self.options.covercuts = 25
+        # if self.options.gomcuts is None:
+        #     self.options.gomcuts = 25
         return super()._apply_solver()
 
-    # TODO
     def _get_mip_results(self, results, soln):
         """Sets up `results` and `soln` and returns whether there is a solution
         to query.
