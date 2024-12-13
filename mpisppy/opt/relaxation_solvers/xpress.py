@@ -51,8 +51,8 @@ class XpressRelaxationSolver(XpressPersistent):
         if self.options.heuremphasis is None:
             self.options.heuremphasis = 0
         if self.options.presolveops is None:
-            # This turns off IP presolve, which will linearize quadratic terms.
-            # This is an excellent idea for the primal, but makes the dual invalid
+            # This turns off IP presolve, which will linearize quadratic terms,
+            # and do a bunch of other reductions not valid for the dual.
             #                               1111 1111 1100 0000 0000
             #                               9876 5432 1098 7654 3210
             self.options.presolveops = int("0000_0000_0011_1111_1111", 2)
