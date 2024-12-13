@@ -56,8 +56,9 @@ class XpressRelaxationSolver(XpressPersistent):
             #                               1111 1111 1100 0000 0000
             #                               9876 5432 1098 7654 3210
             self.options.presolveops = int("0000_0000_0011_1111_1111", 2)
-        if self.options.cutstrategy is None:
-            self.options.cutstrategy = 3
+        # TODO: is this a good idea?
+        # if self.options.cutstrategy is None:
+        #     self.options.cutstrategy = 3
         # TODO: consider giving the user better
         #       direct control over the number
         #       of cut passes
@@ -137,6 +138,9 @@ class XpressRelaxationSolver(XpressPersistent):
             pyo_var = var_map[xp_var]
             if ref_vars[pyo_var] > 0:
                 pyo_var.set_value(val, skip_validation=True)
+        # for v in self._pyomo_model._mpisppy_data.nonant_indices.values():
+        #     print(v.name, v.value)
+        # raise RuntimeError
 
     def _load_rc(self, vars_to_load=None):
         xprob = self._solver_model
