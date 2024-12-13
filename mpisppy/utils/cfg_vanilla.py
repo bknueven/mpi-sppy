@@ -105,6 +105,8 @@ def ph_hub(
         all_nodenames=None,
 ):
     shoptions = shared_options(cfg)
+    if cfg.ph_solver_name is not None:
+        shoptions["solver_name"] = cfg.ph_solver_name
     options = copy.deepcopy(shoptions)
     options["convthresh"] = cfg.intra_hub_conv_thresh
     options["bundles_per_rank"] = cfg.bundles_per_rank

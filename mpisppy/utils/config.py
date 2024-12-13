@@ -183,6 +183,7 @@ class Config(pyofig.ConfigDict):
                             default=None)
 
         self.add_solver_specs(prefix="")
+        self.add_solver_specs(prefix="ph")
 
         self.add_to_config("seed",
                             description="Seed for random numbers (default is 1134)",
