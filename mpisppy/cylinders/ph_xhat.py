@@ -12,6 +12,7 @@ import mpisppy.log
 
 import pyomo.environ as pyo
 
+import mpisppy.utils.sputils as sputils
 from mpisppy.cylinders.xhatshufflelooper_bounder import (
     XhatShuffleInnerBound,
     ScenarioCycler,
@@ -123,12 +124,15 @@ class PHXhat(XhatShuffleInnerBound):
                         _vb(f"   Updating best to {next_scendict}")
                         scenario_cycler.best = next_scendict["ROOT"]
 
-                self.opt._restore_nonants(update_persistent=True)
+                self.opt._restore_nonants(update_persistent=False)
 
+                self.opt.Compute_Xbar()
                 # fix a bunch
                 # first = True
+                fixed_vars = {}
                 raw_fixed = 0
                 for k, s in self.opt.local_scenarios.items():
+                    fixed_vars[s] = pyo.ComponentMap()
                     for ndn_i, xvar in s._mpisppy_data.nonant_indices.items():
                         if xvar.is_fixed():
                             continue
@@ -144,18 +148,17 @@ class PHXhat(XhatShuffleInnerBound):
                                 if math.isclose(
                                     int(xb), xb, abs_tol=1e-5
                                 ):
-                                    xvar.fix(int(xb))
+                                    fixed_vars[s][xvar] = int(xb)
                                     raw_fixed += 1
                             elif xvar.lb is not None and xvar.lb > xb:
-                                xvar.fix(xvar.lb)
+                                fixed_vars[s][xvar] = xvar.lb
                                 raw_fixed += 1
                             elif xvar.ub is not None and xvar.ub < xb:
-                                xvar.fix(xvar.ub)
+                                fixed_vars[s][xvar] = xvar.ub
                                 raw_fixed += 1
                             else:
-                                xvar.fix(xb)
+                                fixed_vars[s][xvar] = xb
                                 raw_fixed += 1
-                            s._solver_plugin.update_var(xvar)
                         # else:
                         #     if first:
                         #         print("\tnot fixing")
@@ -171,6 +174,12 @@ class PHXhat(XhatShuffleInnerBound):
             self.opt.Compute_Xbar()
             self.opt.Update_W(verbose=False)
 
+            for s in fixed_vars:
+                for var, val in fixed_vars[s].items():
+                    var.fix(val)
+                if (sputils.is_persistent(s._solver_plugin)):
+                    for var in fixed_vars[s]:
+                        s._solver_plugin.update_var(var)
 
             # TODO: add smoothing
             smoothed = False
