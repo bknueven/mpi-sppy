@@ -34,8 +34,8 @@ class PHXhat(XhatShuffleInnerBound):
     def main(self):
         logger.debug(f"Entering main on ph_xhat spoke rank {self.global_rank}")
 
-        self.xhat_prep()
         self.opt.PH_Prep()
+        self.xhat_prep()
         if "reverse" in self.opt.options["ph_xhat_options"]:
             self.reverse = self.opt.options["ph_xhat_options"]["reverse"]
         else:
