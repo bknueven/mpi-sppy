@@ -50,6 +50,7 @@ class PHXhat(XhatShuffleInnerBound):
             self.fixtol = 1e-6
         self.solver_options = self.opt.options["ph_xhat_options"]["xhat_solver_options"]
 
+        self.verbose = True
         # give all ranks the same seed
         self.random_stream.seed(self.random_seed)
 
@@ -122,6 +123,47 @@ class PHXhat(XhatShuffleInnerBound):
                         _vb(f"   Updating best to {next_scendict}")
                         scenario_cycler.best = next_scendict["ROOT"]
 
+                self.opt._restore_nonants(update_persistent=True)
+
+                # fix a bunch
+                # first = True
+                raw_fixed = 0
+                for k, s in self.opt.local_scenarios.items():
+                    for ndn_i, xvar in s._mpisppy_data.nonant_indices.items():
+                        if xvar.is_fixed():
+                            continue
+                        xb = pyo.value(s._mpisppy_model.xbars[ndn_i])
+                        diff = xb * xb - pyo.value(s._mpisppy_model.xsqbars[ndn_i])
+                        totval = self.fixtol * self.fixtol
+                        # if first:
+                        #     print(f"{xvar.name}, {xb=}, {diff=}, {totval=}")
+                        if -diff < totval and diff < totval:
+                            # if first:
+                            #     print("\tfixing")
+                            if xvar.is_integer():
+                                if math.isclose(
+                                    int(xb), xb, abs_tol=1e-5
+                                ):
+                                    xvar.fix(int(xb))
+                                    raw_fixed += 1
+                            elif xvar.lb is not None and xvar.lb > xb:
+                                xvar.fix(xvar.lb)
+                                raw_fixed += 1
+                            elif xvar.ub is not None and xvar.ub < xb:
+                                xvar.fix(xvar.ub)
+                                raw_fixed += 1
+                            else:
+                                xvar.fix(xb)
+                                raw_fixed += 1
+                            s._solver_plugin.update_var(xvar)
+                        # else:
+                        #     if first:
+                        #         print("\tnot fixing")
+                    # first = False
+
+                number_fixed = int(raw_fixed / len(self.opt.local_scenarios))
+                _vb(f"  Fixed {number_fixed} non-anticipative varibles")
+
             _vb(f"    scenario_cycler._scenarios_this_epoch {scenario_cycler._scenarios_this_epoch}")
             # Restore nonants; compute xbar, W, fix lots of things, solve
             self.opt._restore_nonants(update_persistent=True)
@@ -129,36 +171,6 @@ class PHXhat(XhatShuffleInnerBound):
             self.opt.Compute_Xbar()
             self.opt.Update_W(verbose=False)
 
-            # fix a bunch
-            first = True
-            for k, s in self.opt.local_scenarios.items():
-                for ndn_i, xvar in s._mpisppy_data.nonant_indices.items():
-                    if xvar.is_fixed():
-                        continue
-                    xb = pyo.value(s._mpisppy_model.xbars[ndn_i])
-                    diff = xb * xb - pyo.value(s._mpisppy_model.xsqbars[ndn_i])
-                    totval = self.fixtol * self.fixtol
-                    # if first:
-                    #     print(f"{xvar.name}, {xb=}, {diff=}, {totval=}")
-                    if -diff < totval and diff < totval:
-                        # if first:
-                        #     print("\tfixing")
-                        if xvar.lb is not None and xvar.lb > xb:
-                            xvar.fix(xvar.lb)
-                        elif xvar.ub is not None and xvar.ub < xb:
-                            xvar.fix(xvar.ub)
-                        elif xvar.is_integer():
-                            if math.isclose(
-                                int(xb), xb, abs_tol=1e-5
-                            ):
-                                xvar.fix(int(xb))
-                        else:
-                            xvar.fix(xb)
-                        s._solver_plugin.update_var(xvar)
-                    # else:
-                    #     if first:
-                    #         print("\tnot fixing")
-                first = False
 
             # TODO: add smoothing
             smoothed = False
@@ -169,6 +181,7 @@ class PHXhat(XhatShuffleInnerBound):
                 self.opt.extobject.miditer()
 
             _vb("  Doing PH iteration")
+            _vb(f"  Solver: {s._solver_plugin}")
             teeme = False
             dtiming = False
             self.opt.solve_loop(
