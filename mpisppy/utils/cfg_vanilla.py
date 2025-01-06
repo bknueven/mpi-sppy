@@ -724,7 +724,8 @@ def ph_xhat_spoke(
         ph_xhat_dict["opt_kwargs"]["options"]["ph_xhat_options"]["iter_step"] = cfg.ph_xhat_iter_step
     if _hasit(cfg, "ph_xhat_fixtol"):
         ph_xhat_dict["opt_kwargs"]["options"]["ph_xhat_options"]["fixtol"] = cfg.ph_xhat_fixtol
-
+    if _hasit(cfg, "ph_xhat_linearize_proximal_terms"):
+        ph_xhat_dict["opt_kwargs"]["options"]["linearize_proximal_terms"] = cfg.ph_xhat_linearize_proximal_terms
     return ph_xhat_dict
 
 

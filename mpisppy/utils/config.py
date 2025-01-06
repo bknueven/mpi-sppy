@@ -725,6 +725,10 @@ class Config(pyofig.ConfigDict):
                            domain=float,
                            default=1e-6)
 
+        self.add_to_config('ph_xhat_linearize_proximal_terms',
+                           description="linearize proximal terms in PH Xhat",
+                           domain=bool,
+                           default=False)
 
     def mult_rho_args(self):
 
