@@ -274,8 +274,15 @@ def _do_decomp(module, cfg, scenario_creator, scenario_creator_kwargs, scenario_
                                                    all_nodenames=all_nodenames)
     if cfg.ph_xhat:
         ph_xhat_spoke = vanilla.ph_xhat_spoke(*beans,
-                                                   scenario_creator_kwargs=scenario_creator_kwargs,
-                                                   all_nodenames=all_nodenames)
+                                              scenario_creator_kwargs=scenario_creator_kwargs,
+                                              rho_setter = rho_setter,
+                                              all_nodenames=all_nodenames)
+        if cfg.sep_rho:
+            vanilla.add_sep_rho(ph_xhat_spoke, cfg)
+        if cfg.coeff_rho:
+            vanilla.add_coeff_rho(ph_xhat_spoke, cfg)
+        if cfg.sensi_rho:
+            vanilla.add_sensi_rho(ph_xhat_spoke, cfg)
 
     # reduced cost fixer options setup
     if cfg.reduced_costs:

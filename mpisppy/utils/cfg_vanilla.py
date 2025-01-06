@@ -695,6 +695,7 @@ def ph_xhat_spoke(
     all_scenario_names,
     all_nodenames=None,
     scenario_creator_kwargs=None,
+    rho_setter=None,
     ph_extensions=None,
     extension_kwargs=None,
 ):
@@ -707,6 +708,7 @@ def ph_xhat_spoke(
         all_scenario_names,
         all_nodenames=all_nodenames,
         scenario_creator_kwargs=scenario_creator_kwargs,
+        rho_setter=rho_setter,
         ph_extensions=ph_extensions,
         extension_kwargs=extension_kwargs,
     )

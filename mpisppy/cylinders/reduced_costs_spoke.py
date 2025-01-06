@@ -93,7 +93,7 @@ class ReducedCostsSpoke(LagrangianOuterBound):
         for s in self.opt.local_subproblems.values():
             relax_integer_vars.apply_to(s)
             s.rc = pyo.Suffix(direction=pyo.Suffix.IMPORT)
-        self.opt._create_solvers(presolve=False)
+        self.opt._create_solvers()
 
     def lagrangian(self, need_solution=True):
         if not need_solution:
