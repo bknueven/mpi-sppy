@@ -703,6 +703,28 @@ class Config(pyofig.ConfigDict):
                            domain=int,
                            default=None)
 
+    def ph_xhat_args(self):
+
+        self.add_to_config('ph_xhat',
+                           description="have a ph_xhat spoke",
+                           domain=bool,
+                           default=False)
+
+        self.add_to_config('add_reversed_shuffle',
+                           description="using also the reversed shuffling (multistage only, default True)",
+                           domain=bool,
+                           default=False)
+
+        self.add_to_config('ph_xhat_iter_step',
+                           description="step in shuffled list between 2 scenarios to try (default None)",
+                           domain=int,
+                           default=None)
+
+        self.add_to_config('ph_xhat_fixtol',
+                           description="fixing tolerance for PH Xhat (default 1e-6)",
+                           domain=float,
+                           default=1e-6)
+
 
     def mult_rho_args(self):
 

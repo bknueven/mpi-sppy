@@ -877,7 +877,7 @@ class SPOpt(SPBase):
                 self.local_subproblems[sname].scen_list = [sname]
 
 
-    def _create_solvers(self, presolve=True):
+    def _create_solvers(self):
 
         dtiming = ("display_timing" in self.options) and self.options["display_timing"]
         local_sit = [] # Local set instance time for time tracking

@@ -30,6 +30,7 @@ from mpisppy.cylinders.xhatlooper_bounder import XhatLooperInnerBound
 from mpisppy.cylinders.xhatxbar_bounder import XhatXbarInnerBound
 from mpisppy.cylinders.xhatspecific_bounder import XhatSpecificInnerBound
 from mpisppy.cylinders.xhatshufflelooper_bounder import XhatShuffleInnerBound
+from mpisppy.cylinders.ph_xhat import PHXhat
 from mpisppy.cylinders.lshaped_bounder import XhatLShapedInnerBound
 from mpisppy.cylinders.slam_heuristic import SlamMaxHeuristic, SlamMinHeuristic
 from mpisppy.cylinders.cross_scen_spoke import CrossScenarioCutSpoke
@@ -682,10 +683,47 @@ def xhatshuffle_spoke(
     }
     if _hasit(cfg, "add_reversed_shuffle"):
         xhatshuffle_dict["opt_kwargs"]["options"]["xhat_looper_options"]["reverse"] = cfg.add_reversed_shuffle
-    if _hasit(cfg, "add_reversed_shuffle"):
-        xhatshuffle_dict["opt_kwargs"]["options"]["xhatshuffle_iter_step"] = cfg.xhatshuffle_iter_step
+    if _hasit(cfg, "xhatshuffle_iter_step"):
+        xhatshuffle_dict["opt_kwargs"]["options"]["xhat_looper_options"]["iter_step"] = cfg.xhatshuffle_iter_step
 
     return xhatshuffle_dict
+
+def ph_xhat_spoke(
+    cfg,
+    scenario_creator,
+    scenario_denouement,
+    all_scenario_names,
+    all_nodenames=None,
+    scenario_creator_kwargs=None,
+    ph_extensions=None,
+    extension_kwargs=None,
+):
+
+    ph_xhat_dict = _PHBase_spoke_foundation(
+        PHXhat,
+        cfg,
+        scenario_creator,
+        scenario_denouement,
+        all_scenario_names,
+        all_nodenames=all_nodenames,
+        scenario_creator_kwargs=scenario_creator_kwargs,
+        ph_extensions=ph_extensions,
+        extension_kwargs=extension_kwargs,
+    )
+    ph_xhat_dict["opt_kwargs"]["options"]['bundles_per_rank'] = 0  # no bundles for xhat
+    ph_xhat_dict["opt_kwargs"]["options"]["ph_xhat_options"] = {
+        "xhat_solver_options": ph_xhat_dict["opt_kwargs"]["options"]["iterk_solver_options"],
+        "dump_prefix": "delme",
+        "csvname": "looper.csv",
+    }
+    if _hasit(cfg, "add_reversed_shuffle"):
+        ph_xhat_dict["opt_kwargs"]["options"]["ph_xhat_options"]["reverse"] = cfg.add_reversed_shuffle
+    if _hasit(cfg, "ph_xhat_iter_step"):
+        ph_xhat_dict["opt_kwargs"]["options"]["ph_xhat_options"]["iter_step"] = cfg.ph_xhat_iter_step
+    if _hasit(cfg, "ph_xhat_fixtol"):
+        ph_xhat_dict["opt_kwargs"]["options"]["ph_xhat_options"]["fixtol"] = cfg.ph_xhat_fixtol
+
+    return ph_xhat_dict
 
 
 def xhatspecific_spoke(

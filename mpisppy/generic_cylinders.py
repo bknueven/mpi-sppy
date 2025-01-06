@@ -66,6 +66,7 @@ def _parse_args(m):
     cfg.ph_ob_args()
     cfg.subgradient_args()
     cfg.xhatshuffle_args()
+    cfg.ph_xhat_args()
     cfg.xhatxbar_args()
     cfg.converger_args()
     cfg.wxbar_read_write_args()
@@ -271,6 +272,10 @@ def _do_decomp(module, cfg, scenario_creator, scenario_creator_kwargs, scenario_
         xhatxbar_spoke = vanilla.xhatxbar_spoke(*beans,
                                                    scenario_creator_kwargs=scenario_creator_kwargs,
                                                    all_nodenames=all_nodenames)
+    if cfg.ph_xhat:
+        ph_xhat_spoke = vanilla.ph_xhat_spoke(*beans,
+                                                   scenario_creator_kwargs=scenario_creator_kwargs,
+                                                   all_nodenames=all_nodenames)
 
     # reduced cost fixer options setup
     if cfg.reduced_costs:
@@ -303,6 +308,8 @@ def _do_decomp(module, cfg, scenario_creator, scenario_creator_kwargs, scenario_
         list_of_spoke_dict.append(xhatshuffle_spoke)
     if cfg.xhatxbar:
         list_of_spoke_dict.append(xhatxbar_spoke)
+    if cfg.ph_xhat:
+        list_of_spoke_dict.append(ph_xhat_spoke)
     if cfg.reduced_costs:
         list_of_spoke_dict.append(reduced_costs_spoke)
         

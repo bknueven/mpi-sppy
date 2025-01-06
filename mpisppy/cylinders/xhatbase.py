@@ -16,7 +16,9 @@ class XhatInnerBoundBase(spoke.InnerBoundNonantSpoke):
     @abc.abstractmethod
     def xhat_extension(self):
         raise NotImplementedError
-    
+
+    def xhat_opt(self):
+        return Xhat_Eval
 
     def xhat_prep(self):
         if "bundles_per_rank" in self.opt.options\
@@ -26,8 +28,8 @@ class XhatInnerBoundBase(spoke.InnerBoundNonantSpoke):
         ## for later
         self.verbose = self.opt.options["verbose"] # typing aid  
 
-        if not isinstance(self.opt, Xhat_Eval):
-            raise RuntimeError(f"{self.__class__.__name__} must be used with Xhat_Eval.")
+        if not isinstance(self.opt, self.xhat_opt()):
+            raise RuntimeError(f"{self.__class__.__name__} must be used with {self.xhat_opt()}.")
             
         xhatter = self.xhat_extension()
 
@@ -37,7 +39,13 @@ class XhatInnerBoundBase(spoke.InnerBoundNonantSpoke):
             self.opt.extobject.pre_iter0()  # for an extension
         self.opt._save_original_nonants()
 
-        self.opt._lazy_create_solvers()  # no iter0 loop, but we need the solvers
+        #global_toc("Creating solvers")
+        self.opt._create_solvers()
+        if hasattr(self.opt, "_subproblems_solvers_created"):
+            self.opt._subproblems_solvers_created = True
+
+        if (self.opt.extensions is not None):
+            self.opt.extobject.iter0_post_solver_creation()
 
         self.opt._update_E1()
         if abs(1 - self.opt.E1) > self.opt.E1_tolerance:
