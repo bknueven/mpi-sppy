@@ -49,6 +49,10 @@ class PHXhat(XhatShuffleInnerBound):
             self.fixtol = self.opt.options["ph_xhat_options"]["fixtol"]
         else:
             self.fixtol = 1e-6
+        if "rho_multiplier" in self.opt.options["ph_xhat_options"]:
+            self.rho_multiplier = self.opt.options["ph_xhat_options"]["rho_multiplier"]
+        else:
+            self.rho_multiplier = 0.1
         self.solver_options = self.opt.options["ph_xhat_options"]["xhat_solver_options"]
 
         self.verbose = True
@@ -72,6 +76,13 @@ class PHXhat(XhatShuffleInnerBound):
         if self.opt.rho_setter is not None:
             _vb("PHXhat calling rho setter")
             self.opt._use_rho_setter(False)
+
+        # update rho
+        rf = self.rho_multiplier
+        for scenario in self.opt.local_scenarios.values():
+            for ndn_i in scenario._mpisppy_model.rho:
+                scenario._mpisppy_model.rho[ndn_i] *= rf
+
         # _vb(f"  Doing PH iter 0")
         # teeme = False
         # dtiming = False
@@ -115,24 +126,26 @@ class PHXhat(XhatShuffleInnerBound):
                     for w in s._mpisppy_model.W.values():
                         w._value = 0
 
-                scenario_cycler.begin_epoch()
-                next_scendict = scenario_cycler.get_next()
-                if next_scendict is not None:
-                    _vb(f"   Trying next {next_scendict}")
-                    update = self.try_scenario_dict(next_scendict)
-                    if update:
-                        _vb(f"   Updating best to {next_scendict}")
-                        scenario_cycler.best = next_scendict["ROOT"]
+                # scenario_cycler.begin_epoch()
+                # next_scendict = scenario_cycler.get_next()
+                # _vb(f"   Trying next {next_scendict}")
+                # update = self.try_scenario_dict(next_scendict)
+                # if update:
+                #     _vb(f"   Updating best to {next_scendict}")
+                #     scenario_cycler.best = next_scendict["ROOT"]
 
                 self.opt._restore_nonants(update_persistent=False)
 
                 self.opt.Compute_Xbar()
+                self.opt.Update_W(verbose=False)
+                # TODO: add smoothing
+                smoothed = False
+                if smoothed:
+                    self.opt.Update_z(self.verbose)
                 # fix a bunch
                 # first = True
-                fixed_vars = {}
                 raw_fixed = 0
                 for k, s in self.opt.local_scenarios.items():
-                    fixed_vars[s] = pyo.ComponentMap()
                     for ndn_i, xvar in s._mpisppy_data.nonant_indices.items():
                         if xvar.is_fixed():
                             continue
@@ -148,16 +161,16 @@ class PHXhat(XhatShuffleInnerBound):
                                 if math.isclose(
                                     int(xb), xb, abs_tol=1e-5
                                 ):
-                                    fixed_vars[s][xvar] = int(xb)
+                                    xvar.fix(int(xb))
                                     raw_fixed += 1
                             elif xvar.lb is not None and xvar.lb > xb:
-                                fixed_vars[s][xvar] = xvar.lb
+                                xvar.fix(xvar.lb)
                                 raw_fixed += 1
                             elif xvar.ub is not None and xvar.ub < xb:
-                                fixed_vars[s][xvar] = xvar.ub
+                                xvar.fix(xvar.ub)
                                 raw_fixed += 1
                             else:
-                                fixed_vars[s][xvar] = xb
+                                xvar.fix(xb)
                                 raw_fixed += 1
                         # else:
                         #     if first:
@@ -166,25 +179,12 @@ class PHXhat(XhatShuffleInnerBound):
 
                 number_fixed = int(raw_fixed / len(self.opt.local_scenarios))
                 _vb(f"  Fixed {number_fixed} non-anticipative varibles")
+                self.opt._save_nonants()
 
             _vb(f"    scenario_cycler._scenarios_this_epoch {scenario_cycler._scenarios_this_epoch}")
             # Restore nonants; compute xbar, W, fix lots of things, solve
             self.opt._restore_nonants(update_persistent=True)
             self.opt.reenable_W_and_prox()
-            self.opt.Compute_Xbar()
-            self.opt.Update_W(verbose=False)
-
-            for s in fixed_vars:
-                for var, val in fixed_vars[s].items():
-                    var.fix(val)
-                if (sputils.is_persistent(s._solver_plugin)):
-                    for var in fixed_vars[s]:
-                        s._solver_plugin.update_var(var)
-
-            # TODO: add smoothing
-            smoothed = False
-            if smoothed:
-                self.opt.Update_z(self.verbose)
 
             if self.opt.extensions:
                 self.opt.extobject.miditer()
@@ -201,16 +201,36 @@ class PHXhat(XhatShuffleInnerBound):
                 tee=teeme,
                 verbose=False,  # self.verbose
             )
+            self.opt._save_nonants()
 
             if self.opt.extensions:
                 self.opt.extobject.enditer()
                 self.opt.extobject.enditer_after_sync()
 
+            self.opt.Compute_Xbar()
+            self.opt.Update_W(verbose=False)
+            # TODO: add smoothing
+            smoothed = False
+            if smoothed:
+                self.opt.Update_z(self.verbose)
+
             self.opt.disable_W_and_prox()
+
+            scenario_cycler.begin_epoch()
+            next_scendict = scenario_cycler.get_next()
+            _vb(f"   Trying next {next_scendict}")
+            update = self.try_scenario_dict(next_scendict)
+            if update:
+                _vb(f"   Updating best to {next_scendict}")
+                scenario_cycler.best = next_scendict["ROOT"]
+
+            xh_iter += 1
+
             next_scendict = scenario_cycler.get_next()
             if next_scendict is None:
-                scenario_cycler.begin_epoch()
-                next_scendict = scenario_cycler.get_next()
+                continue
+
+            self.opt._restore_nonants(update_persistent=True)
             _vb(f"   Trying next {next_scendict}")
             update = self.try_scenario_dict(next_scendict)
             if update:
