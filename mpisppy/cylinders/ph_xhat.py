@@ -96,6 +96,7 @@ class PHXhat(XhatShuffleInnerBound):
         # )
 
         xh_iter = 1
+        better_this_iter = False
         while not self.got_kill_signal():
             # When there is no iter0, the serial number must be checked.
             # (unrelated: uncomment the next line to see the source of delay getting an xhat)
@@ -108,7 +109,7 @@ class PHXhat(XhatShuffleInnerBound):
                 )
                 logger.debug(f"   Xhatshuffle got from opt on rank {self.global_rank}")
 
-            if self.new_nonants:
+            if self.new_nonants and not better_this_iter:
                 # similar to above, not all ranks will agree on
                 # when there are new_nonants (in the same loop)
                 logger.debug(f"   *Xhatshuffle loop iter={xh_iter}")
@@ -216,6 +217,8 @@ class PHXhat(XhatShuffleInnerBound):
 
             self.opt.disable_W_and_prox()
 
+            # until proven otherwise
+            better_this_iter = False
             scenario_cycler.begin_epoch()
             next_scendict = scenario_cycler.get_next()
             _vb(f"   Trying next {next_scendict}")
@@ -223,6 +226,7 @@ class PHXhat(XhatShuffleInnerBound):
             if update:
                 _vb(f"   Updating best to {next_scendict}")
                 scenario_cycler.best = next_scendict["ROOT"]
+                better_this_iter = True
 
             xh_iter += 1
 
@@ -236,5 +240,6 @@ class PHXhat(XhatShuffleInnerBound):
             if update:
                 _vb(f"   Updating best to {next_scendict}")
                 scenario_cycler.best = next_scendict["ROOT"]
+                better_this_iter = True
 
             xh_iter += 1
