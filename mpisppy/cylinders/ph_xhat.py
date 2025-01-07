@@ -96,7 +96,8 @@ class PHXhat(XhatShuffleInnerBound):
         # )
 
         xh_iter = 1
-        better_this_iter = False
+        iter_no_improve = 1_000_000_000
+        new_nonants = False
         while not self.got_kill_signal():
             # When there is no iter0, the serial number must be checked.
             # (unrelated: uncomment the next line to see the source of delay getting an xhat)
@@ -109,7 +110,12 @@ class PHXhat(XhatShuffleInnerBound):
                 )
                 logger.debug(f"   Xhatshuffle got from opt on rank {self.global_rank}")
 
-            if self.new_nonants and not better_this_iter:
+            # check if we don't already have new nonants
+            if not new_nonants:
+                new_nonants = self.new_nonants
+            if new_nonants and iter_no_improve > 1:
+                new_nonants = False
+                best_obj_this_nonants = float("inf")
                 # similar to above, not all ranks will agree on
                 # when there are new_nonants (in the same loop)
                 logger.debug(f"   *Xhatshuffle loop iter={xh_iter}")
@@ -217,16 +223,20 @@ class PHXhat(XhatShuffleInnerBound):
 
             self.opt.disable_W_and_prox()
 
-            # until proven otherwise
-            better_this_iter = False
+            # # until proven otherwise
+            # better_this_iter = False
+            old_best_obj = best_obj_this_nonants
             scenario_cycler.begin_epoch()
             next_scendict = scenario_cycler.get_next()
             _vb(f"   Trying next {next_scendict}")
-            update = self.try_scenario_dict(next_scendict)
-            if update:
+            update, obj = self.try_scenario_dict(next_scendict)
+            obj = obj if self.is_minimizing else -obj
+            if obj < best_obj_this_nonants:
+                best_obj_this_nonants = obj
                 _vb(f"   Updating best to {next_scendict}")
                 scenario_cycler.best = next_scendict["ROOT"]
-                better_this_iter = True
+                iter_no_improve = 0
+                # better_this_iter = True
 
             xh_iter += 1
 
@@ -236,10 +246,18 @@ class PHXhat(XhatShuffleInnerBound):
 
             self.opt._restore_nonants(update_persistent=True)
             _vb(f"   Trying next {next_scendict}")
-            update = self.try_scenario_dict(next_scendict)
-            if update:
+            update, obj = self.try_scenario_dict(next_scendict)
+            obj = obj if self.is_minimizing else -obj
+            if obj < best_obj_this_nonants:
+                best_obj_this_nonants = obj
                 _vb(f"   Updating best to {next_scendict}")
                 scenario_cycler.best = next_scendict["ROOT"]
-                better_this_iter = True
+                iter_no_improve = 0
+                # better_this_iter = True
+
+            if old_best_obj == best_obj_this_nonants:
+                iter_no_improve += 1
+
+            _vb(f"   iter_no_improve: {iter_no_improve}")
 
             xh_iter += 1

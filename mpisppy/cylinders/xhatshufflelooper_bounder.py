@@ -58,7 +58,7 @@ class XhatShuffleInnerBound(XhatInnerBoundBase):
 
         update = self.update_if_improving(obj)
         logger.debug(f'   bottom of try_scenario_dict on rank {self.global_rank}')
-        return update
+        return update, obj
 
     def main(self):
         logger.debug(f"Entering main on xhatshuffle spoke rank {self.global_rank}")
@@ -122,7 +122,7 @@ class XhatShuffleInnerBound(XhatInnerBoundBase):
             next_scendict = scenario_cycler.get_next()
             if next_scendict is not None:
                 _vb(f"   Trying next {next_scendict}")
-                update = self.try_scenario_dict(next_scendict)
+                update, obj = self.try_scenario_dict(next_scendict)
                 if update:
                     _vb(f"   Updating best to {next_scendict}")
                     scenario_cycler.best = next_scendict["ROOT"]
