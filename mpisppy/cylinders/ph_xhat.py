@@ -6,6 +6,7 @@
 # All rights reserved. Please see the files COPYRIGHT.md and LICENSE.md for
 # full copyright and license information.
 ###############################################################################
+import copy
 import logging
 import math
 import mpisppy.log
@@ -72,6 +73,7 @@ class PHXhat(XhatShuffleInnerBound):
         return PHBase
 
     def restart_ph(self):
+        self._vb("   Restarting PH")
         # set the nonants to those coming from Hub
         self.opt._put_nonant_cache(self.localnonants)
         self.opt._restore_nonants(update_persistent=False)
@@ -125,6 +127,79 @@ class PHXhat(XhatShuffleInnerBound):
         number_fixed = int(raw_fixed / len(self.opt.local_scenarios))
         self._vb(f"  Fixed {number_fixed} non-anticipative varibles")
         self.opt._save_nonants()
+
+    def fix_unfix_new_nonants(self):
+        nonant_caches = {}
+        fixedness_caches = {}
+        for k, s in self.opt.local_scenarios.items():
+            nonant_caches[s] = copy.deepcopy(s._mpisppy_data.nonant_cache)
+            fixedness_caches[s] = copy.deepcopy(s._mpisppy_data.fixedness_cache)
+
+        # set the nonants to those coming from Hub, compute *their* xbar
+        self.opt._put_nonant_cache(self.localnonants)
+        self.opt._restore_nonants(update_persistent=False)
+        self.opt.Compute_Xbar()
+
+        # arbitrary scenario
+        xbar_new = {k: p._value for k, p in s._mpisppy_model.xbars.items()}
+        #xsqbars_new = {k: p._value for k, p in s._mpisppy_model.xsqbars.items()}
+
+        for k, s in self.opt.local_scenarios.items():
+            s._mpisppy_data.nonant_cache = nonant_caches[s]
+            s._mpisppy_data.fixedness_cache = fixedness_caches[s]
+
+        # now we're back to the last PH iterate
+        self.opt._restore_nonants(update_persistent=False)
+        self.opt.Compute_Xbar()
+
+        raw_fixed = 0
+        raw_unfixed = 0
+        for k, s in self.opt.local_scenarios.items():
+            for ndn_i, xvar in s._mpisppy_data.nonant_indices.items():
+                xb = pyo.value(s._mpisppy_model.xbars[ndn_i])
+                diff = abs( xb - xbar_new[ndn_i] )
+                if xvar.is_fixed():
+                    if diff > self.fixtol:
+                        xvar.unfix()
+                        raw_unfixed += 1
+                        continue
+                elif diff < self.fixtol: # not currently fixed
+                    # fix if this variable seems to have converged
+                    # and it has the same xbar as the hub
+                    xb = pyo.value(s._mpisppy_model.xbars[ndn_i])
+                    diff = xb * xb - pyo.value(s._mpisppy_model.xsqbars[ndn_i])
+                    totval = self.fixtol * self.fixtol
+                    # if first:
+                    #     print(f"{xvar.name}, {xb=}, {diff=}, {totval=}")
+                    if -diff < totval and diff < totval:
+                        # if first:
+                        #     print("\tfixing")
+                        if xvar.is_integer():
+                            if math.isclose(
+                                int(xb), xb, abs_tol=1e-5
+                            ):
+                                xvar.fix(int(xb))
+                                raw_fixed += 1
+                        elif xvar.lb is not None and xvar.lb > xb:
+                            xvar.fix(xvar.lb)
+                            raw_fixed += 1
+                        elif xvar.ub is not None and xvar.ub < xb:
+                            xvar.fix(xvar.ub)
+                            raw_fixed += 1
+                        else:
+                            xvar.fix(xb)
+                            raw_fixed += 1
+                # else:
+                #     if first:
+                #         print("\tnot fixing")
+            # first = False
+
+        number_fixed = int(raw_fixed / len(self.opt.local_scenarios))
+        number_unfixed = int(raw_unfixed / len(self.opt.local_scenarios))
+        self._vb(f"  Fixed {number_fixed} non-anticipative varibles")
+        self._vb(f"  Unfixed {number_unfixed} non-anticipative varibles")
+        self.opt._save_nonants()
+
 
     def ph_iter(self):
         if self.opt.extensions:
@@ -186,7 +261,8 @@ class PHXhat(XhatShuffleInnerBound):
 
         xh_iter = 1
         iter_no_improve = 1_000_000_000
-        new_nonants = False
+        conv = float("inf")
+        restart_new_nonants = False
         while not self.got_kill_signal():
             # When there is no iter0, the serial number must be checked.
             # (unrelated: uncomment the next line to see the source of delay getting an xhat)
@@ -197,15 +273,18 @@ class PHXhat(XhatShuffleInnerBound):
                 self._loop_debug_msg(xh_iter)
 
             # check if we don't already have new nonants
-            if not new_nonants:
-                new_nonants = self.new_nonants
-            if new_nonants and iter_no_improve > 1:
-                new_nonants = False
+            if self.new_nonants:
+                self._new_nonant_debug_msg(xh_iter)
+            if not restart_new_nonants:
+                restart_new_nonants = self.new_nonants
+            if (restart_new_nonants and iter_no_improve >= 2) or (conv < self.opt.options["convthresh"]):
+                restart_new_nonants = False
                 best_obj_this_nonants = float("inf")
 
-                self._new_nonant_debug_msg(xh_iter)
-
                 self.restart_ph()
+
+            elif self.new_nonants:
+                self.fix_unfix_new_nonants()
 
             self._vb(f"    scenario_cycler._scenarios_this_epoch {scenario_cycler._scenarios_this_epoch}")
             # Restore nonants; compute xbar, W, fix lots of things, solve
@@ -213,6 +292,7 @@ class PHXhat(XhatShuffleInnerBound):
             self.opt.reenable_W_and_prox()
 
             self.ph_iter()
+            conv = self.opt.convergence_diff()
 
             self.opt.disable_W_and_prox()
 
@@ -231,7 +311,7 @@ class PHXhat(XhatShuffleInnerBound):
             xh_iter += 1
 
             next_scendict = scenario_cycler.get_next()
-            if next_scendict is None:
+            if next_scendict is None or conv < self.opt.options["convthresh"]:
                 continue
 
             self.opt._restore_nonants(update_persistent=True)
