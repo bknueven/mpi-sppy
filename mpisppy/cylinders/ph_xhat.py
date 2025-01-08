@@ -80,9 +80,9 @@ class PHXhat(XhatShuffleInnerBound):
         self.opt._restore_original_fixedness()
 
         # reset Ws
-        for s in self.opt.local_scenarios.values():
-            for w in s._mpisppy_model.W.values():
-                w._value = 0
+        # for s in self.opt.local_scenarios.values():
+        #     for w in s._mpisppy_model.W.values():
+        #         w._value = 0
         self.opt.Compute_Xbar()
         self.opt.Update_W(verbose=False)
         # TODO: add smoothing
@@ -277,7 +277,7 @@ class PHXhat(XhatShuffleInnerBound):
                 self._new_nonant_debug_msg(xh_iter)
             if not restart_new_nonants:
                 restart_new_nonants = self.new_nonants
-            if (restart_new_nonants and iter_no_improve >= 30) or (conv < self.opt.options["convthresh"]):
+            if (restart_new_nonants and iter_no_improve >= 2) or (conv < self.opt.options["convthresh"]):
                 restart_new_nonants = False
                 best_obj_this_nonants = float("inf")
                 self.restart_ph()
