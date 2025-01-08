@@ -64,7 +64,7 @@ class PHXhat(XhatShuffleInnerBound):
         if "rho_multiplier" in self.opt.options["ph_xhat_options"]:
             self.rho_multiplier = self.opt.options["ph_xhat_options"]["rho_multiplier"]
         else:
-            self.rho_multiplier = 0.1
+            self.rho_multiplier = 1.0
         self.solver_options = self.opt.options["ph_xhat_options"]["xhat_solver_options"]
 
         self.verbose = True
