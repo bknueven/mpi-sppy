@@ -277,7 +277,7 @@ class PHXhat(XhatShuffleInnerBound):
                 self._new_nonant_debug_msg(xh_iter)
             if not restart_new_nonants:
                 restart_new_nonants = self.new_nonants
-            if (restart_new_nonants and iter_no_improve >= 2) or (conv < self.opt.options["convthresh"]):
+            if (restart_new_nonants and iter_no_improve >= 10) or (conv < self.opt.options["convthresh"]):
                 restart_new_nonants = False
                 best_obj_this_nonants = float("inf")
                 self.restart_ph()
