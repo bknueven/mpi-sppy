@@ -53,7 +53,7 @@ class XhatShuffleInnerBound(XhatInnerBoundBase):
 
         if obj is None:
             _vb(f"    Infeasible {snamedict}")
-            return False
+            return False, obj
         _vb(f"    Feasible {snamedict}, obj: {obj}")
 
         update = self.update_if_improving(obj)

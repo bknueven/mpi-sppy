@@ -289,12 +289,13 @@ class PHXhat(XhatShuffleInnerBound):
             next_scendict = scenario_cycler.get_next()
             self._vb(f"   Trying next {next_scendict}")
             update, obj = self.try_scenario_dict(next_scendict)
-            obj = obj if self.is_minimizing else -obj
-            if obj < best_obj_this_nonants:
-                best_obj_this_nonants = obj
-                self._vb(f"   Updating best to {next_scendict}")
-                scenario_cycler.best = next_scendict["ROOT"]
-                iter_no_improve = 0
+            if obj is not None:
+                obj = obj if self.is_minimizing else -obj
+                if obj < best_obj_this_nonants:
+                    best_obj_this_nonants = obj
+                    self._vb(f"   Updating best to {next_scendict}")
+                    scenario_cycler.best = next_scendict["ROOT"]
+                    iter_no_improve = 0
 
             xh_iter += 1
 
@@ -306,11 +307,12 @@ class PHXhat(XhatShuffleInnerBound):
             self._vb(f"   Trying next {next_scendict}")
             update, obj = self.try_scenario_dict(next_scendict)
             obj = obj if self.is_minimizing else -obj
-            if obj < best_obj_this_nonants:
-                best_obj_this_nonants = obj
-                self._vb(f"   Updating best to {next_scendict}")
-                scenario_cycler.best = next_scendict["ROOT"]
-                iter_no_improve = 0
+            if obj is not None:
+                if obj < best_obj_this_nonants:
+                    best_obj_this_nonants = obj
+                    self._vb(f"   Updating best to {next_scendict}")
+                    scenario_cycler.best = next_scendict["ROOT"]
+                    iter_no_improve = 0
 
             if old_best_obj == best_obj_this_nonants:
                 iter_no_improve += 1
