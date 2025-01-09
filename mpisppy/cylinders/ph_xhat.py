@@ -53,7 +53,7 @@ class PHXhat(XhatShuffleInnerBound):
         self.iter_step = ph_xhat_options.get("iter_step", None)
         self.fixtol = ph_xhat_options.get("fixtol", 1e-6)
         self.rho_multiplier = ph_xhat_options.get("rho_multiplier", 1.0)
-        self.stalled_restart_iters = ph_xhat_options.get("stalled_restart_iters", 10)
+        self.restart_iters = ph_xhat_options.get("restart_iters", 10)
         self.solver_options = ph_xhat_options.get("xhat_solver_options", {})
         self.verbose = ph_xhat_options.get("verbose", True)
 
@@ -248,7 +248,7 @@ class PHXhat(XhatShuffleInnerBound):
                 scenario._mpisppy_model.rho[ndn_i] *= rf
 
         xh_iter = 1
-        iter_no_improve = 1_000_000_000
+        iter_since_restart = 1_000_000_000
         conv = float("inf")
         restart_new_nonants = False
         while not self.got_kill_signal():
@@ -265,10 +265,11 @@ class PHXhat(XhatShuffleInnerBound):
                 self._new_nonant_debug_msg(xh_iter)
             if not restart_new_nonants:
                 restart_new_nonants = self.new_nonants
-            if (restart_new_nonants and iter_no_improve >= self.stalled_restart_iters) or (conv < self.opt.options["convthresh"]):
+            if (restart_new_nonants and iter_since_restart >= self.restart_iters) or (conv < self.opt.options["convthresh"]):
                 restart_new_nonants = False
                 best_obj_this_nonants = float("inf")
                 self.restart_ph()
+                iter_since_restart = 0
 
             elif self.new_nonants:
                 # best_obj_this_nonants = float("inf")
@@ -295,7 +296,6 @@ class PHXhat(XhatShuffleInnerBound):
                     best_obj_this_nonants = obj
                     self._vb(f"   Updating best to {next_scendict}")
                     scenario_cycler.best = next_scendict["ROOT"]
-                    iter_no_improve = 0
 
             xh_iter += 1
 
@@ -312,11 +312,9 @@ class PHXhat(XhatShuffleInnerBound):
                     best_obj_this_nonants = obj
                     self._vb(f"   Updating best to {next_scendict}")
                     scenario_cycler.best = next_scendict["ROOT"]
-                    iter_no_improve = 0
 
-            if old_best_obj == best_obj_this_nonants:
-                iter_no_improve += 1
+            iter_since_restart += 1
 
-            self._vb(f"   iter_no_improve: {iter_no_improve}")
+            self._vb(f"   iter_since_restart: {iter_since_restart}")
 
             xh_iter += 1

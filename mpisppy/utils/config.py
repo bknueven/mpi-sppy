@@ -725,8 +725,8 @@ class Config(pyofig.ConfigDict):
                            domain=float,
                            default=1e-6)
 
-        self.add_to_config('ph_xhat_stalled_restart_iters',
-                           description="restart PH after no incumbent improvement after this many iterations (default 10)",
+        self.add_to_config('ph_xhat_restart_iters',
+                           description="restart PH after this many iterations (default 10)",
                            domain=int,
                            default=10)
 
