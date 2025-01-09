@@ -13,7 +13,6 @@ import mpisppy.log
 
 import pyomo.environ as pyo
 
-import mpisppy.utils.sputils as sputils
 from mpisppy.cylinders.xhatshufflelooper_bounder import (
     XhatShuffleInnerBound,
     ScenarioCycler,
@@ -49,25 +48,14 @@ class PHXhat(XhatShuffleInnerBound):
         logger.debug(f"   Xhatshuffle got from opt on rank {self.global_rank}")
 
     def _set_options(self):
-        if "reverse" in self.opt.options["ph_xhat_options"]:
-            self.reverse = self.opt.options["ph_xhat_options"]["reverse"]
-        else:
-            self.reverse = True
-        if "iter_step" in self.opt.options["ph_xhat_options"]:
-            self.iter_step = self.opt.options["ph_xhat_options"]["iter_step"]
-        else:
-            self.iter_step = None
-        if "fixtol" in self.opt.options["ph_xhat_options"]:
-            self.fixtol = self.opt.options["ph_xhat_options"]["fixtol"]
-        else:
-            self.fixtol = 1e-6
-        if "rho_multiplier" in self.opt.options["ph_xhat_options"]:
-            self.rho_multiplier = self.opt.options["ph_xhat_options"]["rho_multiplier"]
-        else:
-            self.rho_multiplier = 1.0
-        self.solver_options = self.opt.options["ph_xhat_options"]["xhat_solver_options"]
-
-        self.verbose = True
+        ph_xhat_options = self.opt.options.get("ph_xhat_options", {})
+        self.reverse = ph_xhat_options.get("reverse", True)
+        self.iter_step = ph_xhat_options.get("iter_step", None)
+        self.fixtol = ph_xhat_options.get("fixtol", 1e-6)
+        self.rho_multiplier = ph_xhat_options.get("rho_multiplier", 1.0)
+        self.stalled_restart_iters = ph_xhat_options.get("stalled_restart_iters", 10)
+        self.solver_options = ph_xhat_options.get("xhat_solver_options", {})
+        self.verbose = ph_xhat_options.get("verbose", True)
 
     def xhat_opt(self):
         return PHBase
@@ -277,7 +265,7 @@ class PHXhat(XhatShuffleInnerBound):
                 self._new_nonant_debug_msg(xh_iter)
             if not restart_new_nonants:
                 restart_new_nonants = self.new_nonants
-            if (restart_new_nonants and iter_no_improve >= 30) or (conv < self.opt.options["convthresh"]):
+            if (restart_new_nonants and iter_no_improve >= self.stalled_restart_iters) or (conv < self.opt.options["convthresh"]):
                 restart_new_nonants = False
                 best_obj_this_nonants = float("inf")
                 self.restart_ph()
