@@ -727,9 +727,9 @@ def ph_xhat_spoke(
     if _hasit(cfg, "ph_xhat_linearize_proximal_terms"):
         ph_xhat_dict["opt_kwargs"]["options"]["linearize_proximal_terms"] = cfg.ph_xhat_linearize_proximal_terms
     if _hasit(cfg, "ph_xhat_stalled_restart_iters"):
-        ph_xhat_dict["opt_kwargs"]["options"]["stalled_restart_iters"] = cfg.ph_xhat_stalled_restart_iters
+        ph_xhat_dict["opt_kwargs"]["options"]["ph_xhat_options"]["stalled_restart_iters"] = cfg.ph_xhat_stalled_restart_iters
     if _hasit(cfg, "ph_xhat_verbose"):
-        ph_xhat_dict["opt_kwargs"]["options"]["verbose"] = cfg.ph_xhat_verbose
+        ph_xhat_dict["opt_kwargs"]["options"]["ph_xhat_options"]["verbose"] = cfg.ph_xhat_verbose
     return ph_xhat_dict
 
 
