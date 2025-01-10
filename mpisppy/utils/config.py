@@ -725,6 +725,11 @@ class Config(pyofig.ConfigDict):
                            domain=float,
                            default=1e-6)
 
+        self.add_to_config('ph_xhat_rho_multiplier',
+                           description="Rho multiplier for PH Xhat (default 1.0)",
+                           domain=float,
+                           default=1.0)
+
         self.add_to_config('ph_xhat_restart_iters',
                            description="restart PH after this many iterations (default 10)",
                            domain=int,
