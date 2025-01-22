@@ -91,11 +91,9 @@ class XhatSpecificInnerBound(spoke.InnerBoundNonantSpoke):
                               format(global_rank))
                 logging.debug('  localnonants={}'.format(str(self.localnonants)))
 
+                self.opt._restore_original_fixedness()
                 self.opt._put_nonant_cache(self.localnonants)  # don't really need all caches
-                # just for sending the values to other scenarios
-                # so we don't need to tell persistent solvers
-                self.opt._restore_nonants(update_persistent=False)
-
+                self.opt._restore_nonants()
                 innerbound = xhatter.xhat_tryit(xhat_scenario_dict, restore_nonants=False)
 
                 self.update_if_improving(innerbound)
