@@ -192,9 +192,8 @@ class XhatBase(mpisppy.extensions.extension.Extension):
                     sputils.reactivate_objs(s)
                 # if you hit infeas, return None
                 if not pyo.check_optimal_termination(results):
-                    if restore_nonants:
-                        self.opt._restore_nonants()
-                    return None
+                   self.opt._restore_nonants()
+                   return None
                
             # feasible xhat found, so finish up 2EF part and return
             if verbose and src_rank == self.cylinder_rank:
@@ -220,8 +219,9 @@ class XhatBase(mpisppy.extensions.extension.Extension):
 
         infeasP = self.opt.infeas_prob()
         if infeasP != 0.:
-            if restore_nonants:
-                self.opt._restore_nonants()
+            # restoring does no harm
+            # if this solution is infeasible
+            self.opt._restore_nonants()
             return None
         else:
             if verbose and src_rank == self.cylinder_rank:
