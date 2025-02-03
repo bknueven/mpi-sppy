@@ -4,6 +4,38 @@
 SOLVER="cplex"
 SPB=1
 
+echo "^^^ Multi-stage AirCond ^^^"
+mpiexec -np 3 python -m mpi4py ../mpisppy/generic_cylinders.py --module-name mpisppy.tests.examples.aircond --branching-factors "3 3 3" --solver-name ${SOLVER} --max-iterations 10 --max-solver-threads 4 --default-rho 1 --lagrangian --xhatxbar --rel-gap 0.01 --solution-base-name aircond_nonants
+# --xhatshuffle --stag2EFsolvern
+
+echo "^^^ Multi-stage AirCond, pickle  the scenarios ^^^"
+mpiexec -np 3 python -m mpi4py ../mpisppy/generic_cylinders.py --module-name mpisppy.tests.examples.aircond --branching-factors "3 3 3" --solver-name ${SOLVER} --max-iterations 10 --max-solver-threads 4 --default-rho 1 --lagrangian --xhatxbar --rel-gap 0.01 --solution-base-name aircond_nonants --pickle-scenarios-dir aircond/pickles
+
+echo "^^^ Multi-stage AirCond, bundle the scenarios ^^^"
+mpiexec -np 3 python -m mpi4py ../mpisppy/generic_cylinders.py --module-name mpisppy.tests.examples.aircond --branching-factors "3 3 3" --solver-name ${SOLVER} --max-iterations 10 --max-solver-threads 4 --default-rho 1 --lagrangian --xhatxbar --rel-gap 0.01 --solution-base-name aircond_nonants --scenarios-per-bundle 9
+
+echo "^^^ Multi-stage AirCond, bundle the scenarios and write ^^^"
+mpiexec -np 3 python -m mpi4py ../mpisppy/generic_cylinders.py --module-name mpisppy.tests.examples.aircond --branching-factors "3 3 3" --solver-name ${SOLVER} --max-iterations 10 --max-solver-threads 4 --default-rho 1 --lagrangian --xhatxbar --rel-gap 0.01 --solution-base-name aircond_nonants --pickle-scenarios-dir aircond/pickles --scenarios-per-bundle 9
+
+#### HEY! check on error messages for bad bundle sizes
+
+echo "^^^ write scenario lp and nonant json files ^^^"
+cd sizes
+python ../../mpisppy/generic_cylinders.py --module-name sizes --num-scens 3 --default-rho 1 --solver-name ${SOLVER} --max-iterations 0 --scenario-lpfiles
+cd ..
+
+echo "^^^ pickle sizes bundles ^^^"
+cd sizes
+python -m mpi4py ../../mpisppy/generic_cylinders.py --module-name sizes --num-scens 10 --pickle-bundles-dir sizes_pickles --scenarios-per-bundle 5 --default-rho 1
+cd ..
+
+echo "^^^ unpickle the sizes bundles and write the lp and nonant files ^^^"
+# note that numscens need to match the number before pickling...
+# so does scenarios per bundle
+cd sizes
+python ../../mpisppy/generic_cylinders.py --module-name sizes --num-scens 10 --default-rho 1 --solver-name ${SOLVER} --max-iterations 0 --scenario-lpfiles --unpickle-bundles-dir sizes_pickles --scenarios-per-bundle 5
+cd ..
+
 echo "^^^ pickle the scenarios ^^^"
 cd farmer
 python ../../mpisppy/generic_cylinders.py --module-name farmer --pickle-scenarios-dir farmer_pickles --crops-mult 2 --num-scens 10
@@ -52,8 +84,6 @@ mpiexec -np 3 python -m mpi4py ../../mpisppy/generic_cylinders.py --module-name 
 
 echo "^^^ sep rho dynamic ^^^"
 mpiexec -np 3 python -m mpi4py ../../mpisppy/generic_cylinders.py --module-name farmer --num-scens 3 --bundles-per-rank=0 --max-iterations=100 --default-rho=1 --solver-name=${SOLVER} --xhatpath=./farmer_nonants.npy --grad-order-stat 0.0 --xhatxbar --ph-ob --max-stalled-iters 5000 --sep-rho --rel-gap 0.001 --dynamic-rho-dual-crit --dynamic-rho-dual-thresh 0.1
-
-exit
 
 mpiexec -np 3 python -m mpi4py ../../mpisppy/generic_cylinders.py --module-name farmer --num-scens 3 --bundles-per-rank=0 --max-iterations=100 --default-rho=1 --solver-name=${SOLVER} --xhatpath=./farmer_nonants.npy --grad-order-stat 0.0 --xhatxbar --ph-ob --max-stalled-iters 5000 --grad-rho-setter --rel-gap 0.001
 
