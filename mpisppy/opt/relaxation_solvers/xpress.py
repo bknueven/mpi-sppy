@@ -19,17 +19,19 @@ from pyomo.solvers.plugins.solvers.xpress_persistent import XpressPersistent
 class XpressRelaxationSolver(XpressPersistent):
     @staticmethod
     def get_root_node_solution(xpress_problem, self):
+        print("start get_root_node_solution")
         # when the root node is finished processing
-        # node = xpress_problem.attributes.currentnode
-        # print(f"in cboptnode, node number {node}")
+        node = xpress_problem.attributes.currentnode
+        print(f"in cboptnode, node number {node}")
         objval = xpress_problem.attributes.lpobjval
-        # print(f"objective function value {objval}")
+        print(f"objective function value {objval}")
         # TODO: could get duals, rc, and slacks too
         sol = []
         xpress_problem.getlpsol(x=sol)
         self._relaxation_solution = sol
         self._relaxation_value = objval
 
+        print("end get_root_node_solution")
         # returning 1 tells the solver to terminate
         return 1
 
@@ -38,6 +40,12 @@ class XpressRelaxationSolver(XpressPersistent):
         xpress_problem.addcboptnode(
             XpressRelaxationSolver.get_root_node_solution, self, 0
         )
+
+    def _set_instance(self, model, kwds={}):
+        super()._set_instance(model, kwds)
+        self.set_xpress_callback()
+
+    def _reset_solution(self):
         self._relaxation_solution = None
         self._relaxation_value = None
 
@@ -46,7 +54,7 @@ class XpressRelaxationSolver(XpressPersistent):
         is_mip = (xprob.attributes.mipents > 0) or (xprob.attributes.sets > 0)
         if not is_mip:
             return super()._apply_solver()
-        self.set_xpress_callback()
+        self._reset_solution()
         # turn off heuristics
         if self.options.heuremphasis is None:
             self.options.heuremphasis = 0
