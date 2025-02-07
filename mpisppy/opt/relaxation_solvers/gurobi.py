@@ -46,9 +46,15 @@ class GurobiRelaxationSolver(GurobiPersistent):
         return get_root_node_solution
 
     def set_gurobi_callback(self):
-        self._gurobipy_var_list = list(self._solver_var_to_pyomo_var_map.keys())
         # use the existing callback setting in GurobiDirect
         self._callback = self.make_root_callback()
+
+    def _set_instance(self, model, kwds={}):
+        super()._set_instance(model, kwds)
+        self.set_gurobi_callback()
+
+    def _reset_solution(self):
+        self._gurobipy_var_list = list(self._solver_var_to_pyomo_var_map.keys())
         self._relaxation_solution = None
         self._relaxation_value = None
         self._incumbent_solution = None
@@ -67,7 +73,7 @@ class GurobiRelaxationSolver(GurobiPersistent):
             self._update()
         if not gurobi_model.IsMIP:
             return super()._apply_solver()
-        self.set_gurobi_callback()
+        self._reset_solution()
         # turn off heuristics
         if self.options.Heuristics is None:
             self.options.Heuristics = 0.0
