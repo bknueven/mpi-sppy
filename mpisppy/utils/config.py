@@ -270,6 +270,13 @@ class Config(pyofig.ConfigDict):
                             domain=float,
                             default=1.e-1)
 
+        self.add_to_config("proximal_linearization_continuous",
+                            description="For PH, when linearizing proximal terms, "
+                            "treat integer variables as continuous for the proximal "
+                            "term approximation (default False)",
+                            domain=bool,
+                            default=False)
+
         self.add_to_config("smoothing",
                            description="For PH, add a smoothing term to the objective",
                            domain=bool,

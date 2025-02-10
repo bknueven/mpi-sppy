@@ -22,8 +22,8 @@ def _df_ls(val, x_pnt, y_pnt):
 class ProxApproxManager:
     __slots__ = ()
 
-    def __new__(cls, mpisppy_model, xvar, ndn_i):
-        if xvar.is_integer():
+    def __new__(cls, mpisppy_model, xvar, ndn_i, integer_vars_continuous=False):
+        if not integer_vars_continuous and xvar.is_integer():
             return ProxApproxManagerDiscrete(mpisppy_model, xvar, ndn_i)
         else:
             return ProxApproxManagerContinuous(mpisppy_model, xvar, ndn_i)

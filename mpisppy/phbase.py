@@ -704,6 +704,10 @@ class PHBase(mpisppy.spopt.SPOpt):
                 self.prox_approx_tol = self.options['proximal_linearization_tolerance']
             else:
                 self.prox_approx_tol = 1.e-1
+            if 'proximal_linearization_continuous' in self.options:
+                all_variables_continuous_for_prox = self.options['proximal_linearization_continuous']
+            else:
+                all_variables_continuous_for_prox = False
             # The proximal approximation code now checks the tolerance based on the x-coordinates
             # as opposed to the y-coordinates. Therefore, we will use the square root of the
             # y-coordinate tolerance.
@@ -752,12 +756,12 @@ class PHBase(mpisppy.spopt.SPOpt):
                     # expand (x - xbar)**2 to (x**2 - 2*xbar*x + xbar**2)
                     # x**2 is the only qradratic term, which might be
                     # dealt with differently depending on user-set options
-                    if xvar.is_binary() and (lin_bin_prox or self._prox_approx):
+                    if xvar.is_binary() and (lin_bin_prox or (self._prox_approx and not all_variables_continuous_for_prox)):
                         xvarsqrd = xvar
                     elif self._prox_approx:
                         xvarsqrd = scenario._mpisppy_model.xsqvar[ndn_i]
                         scenario._mpisppy_data.xsqvar_prox_approx[ndn_i] = \
-                                ProxApproxManager(scenario, xvar, ndn_i)
+                                ProxApproxManager(scenario, xvar, ndn_i, integer_vars_continuous=all_variables_continuous_for_prox)
                     else:
                         xvarsqrd = xvar**2
                     prox_expr += (scenario._mpisppy_model.rho[ndn_i] / 2.0) * \
