@@ -233,10 +233,16 @@ class SPOpt(SPBase):
                     if need_solution:
                         raise e
                 if self.is_minimizing:
-                    s._mpisppy_data.outer_bound = results.Problem[0].Lower_bound
+                    if self.options.get("inner_bound_as_outer_bound", False):
+                        s._mpisppy_data.outer_bound = results.Problem[0].Upper_bound
+                    else:
+                        s._mpisppy_data.outer_bound = results.Problem[0].Lower_bound
                     s._mpisppy_data.inner_bound = results.Problem[0].Upper_bound
                 else:
-                    s._mpisppy_data.outer_bound = results.Problem[0].Upper_bound
+                    if self.options.get("inner_bound_as_outer_bound", False):
+                        s._mpisppy_data.outer_bound = results.Problem[0].Lower_bound
+                    else:
+                        s._mpisppy_data.outer_bound = results.Problem[0].Upper_bound
                     s._mpisppy_data.inner_bound = results.Problem[0].Lower_bound
                 s._mpisppy_data.scenario_feasible = True
             # TBD: get this ready for IPopt (e.g., check feas_prob every time)

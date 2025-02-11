@@ -67,6 +67,7 @@ def shared_options(cfg):
         "tee-rank0-solves": cfg.tee_rank0_solves,
         "trace_prefix" : cfg.trace_prefix,
         "presolve" : cfg.presolve,
+        "inner_bound_as_outer_bound" : cfg.inner_bound_as_outer_bound,
     }
     if _hasit(cfg, "max_solver_threads"):
         shoptions["iter0_solver_options"]["threads"] = cfg.max_solver_threads

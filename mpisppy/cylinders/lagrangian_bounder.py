@@ -21,8 +21,9 @@ class _LagrangianMixin:
     def lagrangian(self, need_solution=True):
         verbose = self.opt.options['verbose']
         # This is sort of a hack, but might help folks:
-        if "ipopt" in self.opt.options["solver_name"]:
+        if "ipopt" in self.opt.options["solver_name"] and not self.opt.options.get("inner_bound_as_outer_bound", False):
             print("\n WARNING: An ipopt solver will not give outer bounds\n")
+            print("\n If you want this, use the `inner_bound_as_outer_bound` option")
         teeme = False
         if "tee-rank0-solves" in self.opt.options:
             teeme = self.opt.options['tee-rank0-solves']

@@ -247,6 +247,14 @@ class Config(pyofig.ConfigDict):
                            domain=bool,
                            default=False)
 
+        self.add_to_config("inner_bound_as_outer_bound",
+                            description="When enabled, the solution objective value reported by "
+                            "the solver will be used for outer bound calculations. This can result "
+                            "in invalid outer bounds when the problem is non-convex, but can be "
+                            "for using solvers like Ipopt on convex subproblems.",
+                            domain=bool,
+                            default=False)
+
     def ph_args(self):
         self.add_to_config("linearize_binary_proximal_terms",
                               description="For PH, linearize the proximal terms for "
