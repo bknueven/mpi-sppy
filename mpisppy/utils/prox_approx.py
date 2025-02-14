@@ -202,7 +202,8 @@ class _ProxApproxManager:
         res = least_squares(_f_ls, x_pnt, args=(x_pnt, y_pnt), jac=_df_ls, method="lm", x_scale="jac")
         if not res.success:
             raise RuntimeError(f"Error in projecting {(x_pnt, y_pnt)} onto parabola for "
-                               f"proximal approximation. Message: {res.message}")
+                               f"proximal approximation for nonant {self.xvar.name}. "
+                               f"Message: {res.message}")
         return self.add_cuts(res.x[0], tolerance,  persistent_solver)
 
 class ProxApproxManagerContinuous(_ProxApproxManager):
