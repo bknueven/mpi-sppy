@@ -26,6 +26,9 @@ mpisppy.log.setup_logger("mpisppy.cylinders.Hub",
 logger = logging.getLogger("mpisppy.cylinders.Hub")
 
 class Hub(SPCommunicator):
+
+    _hub_algo_best_bound_provider = False
+
     def __init__(self, spbase_object, fullcomm, strata_comm, cylinder_comm, spokes, options=None):
         super().__init__(spbase_object, fullcomm, strata_comm, cylinder_comm, options=options)
         assert len(spokes) == self.n_spokes
@@ -469,11 +472,6 @@ class PHHub(Hub):
                 "Cannot call setup_hub before memory windows are constructed"
             )
 
-        # attribute to set False if some extension
-        # modified the iteration 0 subproblems such
-        # that the trivial bound is no longer valid
-        self.use_trivial_bound = True
-
         self.initialize_spoke_indices()
         self.initialize_bound_values()
 
@@ -534,10 +532,29 @@ class PHHub(Hub):
     def sync_with_spokes(self):
         self.sync()
 
+    def sync_bounds(self):
+        if self.has_outerbound_spokes:
+            self.receive_outerbounds()
+        if self.has_innerbound_spokes:
+            self.receive_innerbounds()
+        if self.has_bounds_only_spokes:
+            self.send_boundsout()
+
+    def sync_extensions(self):
+        if self.opt.extensions is not None:
+            self.opt.extobject.sync_with_spokes()
+
+    def sync_nonants(self):
+        if self.has_nonant_spokes:
+            self.send_nonants()
+
+    def sync_Ws(self):
+        if self.has_w_spokes:
+            self.send_ws()
+
     def is_converged(self):
-        ## might as well get a bound, in this case
-        if self.opt._PHIter == 1 and self.use_trivial_bound:
-            self.BestOuterBound = self.OuterBoundUpdate(self.opt.trivial_bound)
+        if self.opt.best_bound_obj_val is not None:
+            self.BestOuterBound = self.OuterBoundUpdate(self.opt.best_bound_obj_val)
 
         if not self.has_innerbound_spokes:
             if self.opt._PHIter == 1:
@@ -553,7 +570,7 @@ class PHHub(Hub):
             return False
 
         if not self.has_outerbound_spokes:
-            if self.opt._PHIter == 1:
+            if self.opt._PHIter == 1 and not self._hub_algo_best_bound_provider:
                 global_toc(
                     "Without outer bound spokes, no progress "
                     "will be made on the Best Bound")
@@ -708,6 +725,16 @@ class LShapedHub(Hub):
 
         for idx in self.nonant_spoke_indices:
             self.hub_to_spoke(nonant_send_buffer, idx)
+
+
+class SubgradientHub(PHHub):
+
+    _hub_algo_best_bound_provider = True
+
+    def main(self):
+        """ SPComm gets attached in self.__init__ """
+        self.opt.subgradient_main(finalize=False)
+
 
 class APHHub(PHHub):
 
