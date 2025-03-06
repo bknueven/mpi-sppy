@@ -143,7 +143,7 @@ class FWPH(mpisppy.phbase.PHBase):
             self.Update_W(self.options['verbose'])
             self._swap_nonant_vars_back()
 
-            if (self.extensions): 
+            if (self.extensions):
                 self.extobject.miditer()
 
             if isinstance(self.spcomm, FWPHHub):
@@ -178,20 +178,22 @@ class FWPH(mpisppy.phbase.PHBase):
             # tbsdm = time.time()
             for name in self.local_subproblems:
                 dual_bound = self.SDM(name)
-                self._local_bound += self.local_subproblems[name]._mpisppy_probability * \
-                                     dual_bound
+                if dual_bound is not None:
+                    self._local_bound += self.local_subproblems[name]._mpisppy_probability * \
+                                         dual_bound
             # tsdm = time.time() - tbsdm
             # print(f"PH iter {self._PHIter}, total SDM time: {tsdm}")
-            self._compute_dual_bound()
-            if (self.is_minimizing):
-                best_bound = np.maximum(best_bound, self._local_bound)
-            else:
-                best_bound = np.minimum(best_bound, self._local_bound)
-            if self._can_update_best_bound():
-                self.best_bound_obj_val = best_bound
+            if dual_bound is not None:
+                self._compute_dual_bound()
+                if (self.is_minimizing):
+                    best_bound = np.maximum(best_bound, self._local_bound)
+                else:
+                    best_bound = np.minimum(best_bound, self._local_bound)
+                if self._can_update_best_bound():
+                    self.best_bound_obj_val = best_bound
             self._swap_nonant_vars_back()
 
-            if (self.extensions): 
+            if (self.extensions) and dual_bound is not None:
                 self.extobject.enditer()
 
             secs = time.time() - self.t0
@@ -214,9 +216,10 @@ class FWPH(mpisppy.phbase.PHBase):
             ## Hubs/spokes take precedence over convergers
             if self.spcomm:
                 if isinstance(self.spcomm, FWPHHub):
-                    self.spcomm.sync_nonants()
-                    self.spcomm.sync_bounds()
+                    if dual_bound is not None:
+                        self.spcomm.sync_nonants()
                     self.spcomm.sync_extensions()
+                    self.spcomm.sync_bounds()
                 if self.spcomm.is_converged():
                     secs = time.time() - self.t0
                     self._output(self._local_bound, 
@@ -227,7 +230,7 @@ class FWPH(mpisppy.phbase.PHBase):
                 if isinstance(self.spcomm, Spoke):
                     self.spcomm.sync()
 
-            if (self.extensions): 
+            if (self.extensions) and dual_bound is not None:
                 self.extobject.enditer_after_sync()
             # tphloop = time.time() - tbphloop
             # print(f"PH iter {self._PHIter}, total time: {tphloop}")
@@ -270,64 +273,68 @@ class FWPH(mpisppy.phbase.PHBase):
             }
 
         mip_source = mip.scen_list if self.bundling else [model_name]
+        dual_bound = None
 
         for itr in range(self.FW_options['FW_iter_limit']):
             # loop_start = time.time()
-            # Algorithm 2 line 4
-            for scenario_name in mip_source:
-                scen_mip = self.local_scenarios[scenario_name]
-                for ndn_i in scen_mip._mpisppy_data.nonant_indices:
-                    scen_mip._mpisppy_model.W[ndn_i]._value = (
-                        qp._mpisppy_model.W[ndn_i]._value
-                        + scen_mip._mpisppy_model.rho[ndn_i]._value
-                        * (xt[ndn_i]
-                        -  scen_mip._mpisppy_model.xbars[ndn_i]._value))
+            if self._PHIter % 2 == 0:
+                # Algorithm 2 line 4
+                for scenario_name in mip_source:
+                    scen_mip = self.local_scenarios[scenario_name]
+                    for ndn_i in scen_mip._mpisppy_data.nonant_indices:
+                        scen_mip._mpisppy_model.W[ndn_i]._value = (
+                            qp._mpisppy_model.W[ndn_i]._value
+                            + scen_mip._mpisppy_model.rho[ndn_i]._value
+                            * (xt[ndn_i]
+                            -  scen_mip._mpisppy_model.xbars[ndn_i]._value))
 
-            cutoff = pyo.value(qp._mpisppy_model.mip_obj_in_qp) + pyo.value(qp.recourse_cost)
-            #if self.options["fwph_include_cutoff"]:
-            if True:
-                # TODO: add lookup table for absolute cutoff option
-                self.options["iterk_solver_options"]["MIPABSCUTOFF"] = cutoff
-            # tbmipsolve = time.time()
-            # Algorithm 2 line 5
-            self.solve_one(
-                self.options["iterk_solver_options"],
-                model_name,
-                mip,
-                dtiming=dtiming,
-                tee=teeme,
-                verbose=verbose,
-            )
-            # TODO: fixme for maxmimization / larger objectives
-            self.options["iterk_solver_options"]["MIPABSCUTOFF"] = 1e40
-            # tmipsolve = time.time() - tbmipsolve
+                cutoff = pyo.value(qp._mpisppy_model.mip_obj_in_qp) + pyo.value(qp.recourse_cost)
+                #if self.options["fwph_include_cutoff"]:
+                if True:
+                    # TODO: add lookup table for absolute cutoff option
+                    self.options["iterk_solver_options"]["MIPABSCUTOFF"] = cutoff
+                # tbmipsolve = time.time()
+                # Algorithm 2 line 5
+                self.solve_one(
+                    self.options["iterk_solver_options"],
+                    model_name,
+                    mip,
+                    dtiming=dtiming,
+                    tee=teeme,
+                    verbose=verbose,
+                )
+                # TODO: fixme for maxmimization / larger objectives
+                self.options["iterk_solver_options"]["MIPABSCUTOFF"] = 1e40
+                # tmipsolve = time.time() - tbmipsolve
 
-            # Algorithm 2 lines 6--8
-            if (itr == 0):
-                dual_bound = mip._mpisppy_data.outer_bound
+                # Algorithm 2 lines 6--8
+                if (itr == 0):
+                    dual_bound = mip._mpisppy_data.outer_bound
 
-            # Algorithm 2 line 9 (compute \Gamma^t)
-            inner_bound = mip._mpisppy_data.inner_bound
-            if abs(inner_bound) > 1e-9:
-                stop_check = (cutoff - inner_bound) / abs(inner_bound) # \Gamma^t in Boland, but normalized
+                # Algorithm 2 line 9 (compute \Gamma^t)
+                inner_bound = mip._mpisppy_data.inner_bound
+                if abs(inner_bound) > 1e-9:
+                    stop_check = (cutoff - inner_bound) / abs(inner_bound) # \Gamma^t in Boland, but normalized
+                else:
+                    stop_check = cutoff - inner_bound # \Gamma^t in Boland
+                # print(f"{model_name}, Gamma^t = {stop_check}")
+                stop_check_tol = self.FW_options["stop_check_tol"]\
+                                 if "stop_check_tol" in self.FW_options else 1e-4
+                if (self.is_minimizing and stop_check < -stop_check_tol):
+                    print('Warning (fwph): convergence quantity Gamma^t = '
+                         '{sc:.2e} (should be non-negative)'.format(sc=stop_check))
+                    print('Try decreasing the MIP gap tolerance and re-solving')
+                elif (not self.is_minimizing and stop_check > stop_check_tol):
+                    print('Warning (fwph): convergence quantity Gamma^t = '
+                         '{sc:.2e} (should be non-positive)'.format(sc=stop_check))
+                    print('Try decreasing the MIP gap tolerance and re-solving')
+
+                # tbcol = time.time()
+                self._add_QP_column(model_name)
+                # tcol = time.time() - tbcol
+                # print(f"{model_name} QP add_column time: {tcol}")
             else:
-                stop_check = cutoff - inner_bound # \Gamma^t in Boland
-            # print(f"{model_name}, Gamma^t = {stop_check}")
-            stop_check_tol = self.FW_options["stop_check_tol"]\
-                             if "stop_check_tol" in self.FW_options else 1e-4
-            if (self.is_minimizing and stop_check < -stop_check_tol):
-                print('Warning (fwph): convergence quantity Gamma^t = '
-                     '{sc:.2e} (should be non-negative)'.format(sc=stop_check))
-                print('Try decreasing the MIP gap tolerance and re-solving')
-            elif (not self.is_minimizing and stop_check > stop_check_tol):
-                print('Warning (fwph): convergence quantity Gamma^t = '
-                     '{sc:.2e} (should be non-positive)'.format(sc=stop_check))
-                print('Try decreasing the MIP gap tolerance and re-solving')
-
-            # tbcol = time.time()
-            self._add_QP_column(model_name)
-            # tcol = time.time() - tbcol
-            # print(f"{model_name} QP add_column time: {tcol}")
+                stop_check = -1
 
             # tbqpsol = time.time()
             # QPs are weird if bundled
