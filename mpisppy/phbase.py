@@ -1008,6 +1008,7 @@ class PHBase(mpisppy.spopt.SPOpt):
             # print a screen trace for iteration 0
             if self.spcomm.is_converged():
                 global_toc("Cylinder convergence", self.cylinder_rank == 0)
+                return
 
         for self._PHIter in range(1, max_iterations+1):
             iteration_start_time = time.time()
@@ -1075,11 +1076,11 @@ class PHBase(mpisppy.spopt.SPOpt):
                 self.spcomm.sync_nonants()
                 self.spcomm.sync_bounds()
                 self.spcomm.sync_extensions()
-                if self.spcomm.is_converged():
-                    global_toc("Cylinder convergence", self.cylinder_rank == 0)
-                    break
             elif hasattr(self.spcomm, "sync"):
                 self.spcomm.sync()
+            if self.spcomm and self.spcomm.is_converged():
+                global_toc("Cylinder convergence", self.cylinder_rank == 0)
+                break
 
             if have_extensions:
                 self.extobject.enditer_after_sync()
