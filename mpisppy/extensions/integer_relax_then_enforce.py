@@ -24,6 +24,9 @@ class IntegerRelaxThenEnforce(mpisppy.extensions.extension.Extension):
         options = opt.options.get("integer_relax_then_enforce_options", {})
         # fraction of iterations or time to spend in relaxed mode
         self.ratio = options.get("ratio", 0.5)
+        self.agg_on_relax_only = options.get("agg_on_relax_only", True)
+        self._non_agg_rhos = {}
+        self._reset_non_agg_rhos_next_iter = False
 
 
     def pre_iter0(self):
@@ -31,6 +34,26 @@ class IntegerRelaxThenEnforce(mpisppy.extensions.extension.Extension):
         for s in self.opt.local_scenarios.values():
             self.integer_relaxer.apply_to(s) 
         self._integers_relaxed = True
+
+    def _cache_rho_reset_W(self):
+        print(f"caching rho")
+        for s in self.opt.local_scenarios.values():
+            self._non_agg_rhos[s] = {}
+            for ndn_i, xvar in s._mpisppy_data.nonant_indices.items():
+                if xvar not in s._mpisppy_data.all_surrogate_nonants:
+                    self._non_agg_rhos[s][ndn_i] = s._mpisppy_model.rho[ndn_i]._value
+                    s._mpisppy_model.rho[ndn_i]._value = 0
+                    s._mpisppy_model.W[ndn_i]._value = 0
+
+    def _reset_rho(self):
+        print(f"resetting rho")
+        for s, rhos in self._non_agg_rhos.items():
+            for ndn_i, val in rhos.items():
+                s._mpisppy_model.rho[ndn_i]._value = val
+            # for ndn_i, xvar in s._mpisppy_data.nonant_indices.items():
+            #     if xvar in s._mpisppy_data.all_surrogate_nonants:
+            #         s._mpisppy_model.rho[ndn_i]._value *= 1e-1
+        self._reset_non_agg_rhos_next_iter = False
 
     def _unrelax_integers(self):
         for sub in self.opt.local_subproblems.values():
@@ -45,8 +68,16 @@ class IntegerRelaxThenEnforce(mpisppy.extensions.extension.Extension):
                     for v in vlist:
                         subproblem_solver.update_var(v)
         self._integers_relaxed = False
+        self._reset_non_agg_rhos_next_iter = True
 
     def miditer(self):
+        if self.agg_on_relax_only:
+            if not self._non_agg_rhos:
+                self._cache_rho_reset_W()
+                return
+        if self.agg_on_relax_only and self._reset_non_agg_rhos_next_iter:
+            self._reset_rho()
+            return
         if not self._integers_relaxed:
             return
         # time is running out

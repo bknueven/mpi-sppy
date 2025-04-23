@@ -164,18 +164,19 @@ class _ProxApproxManager:
             num_cuts += self.add_cut(rotated_x_val_x_bar, tolerance, persistent_solver)
         # aug_lagrange_point, is the minimizer of w\cdot x + (\rho / 2)(x - x_bar)^2
         # to create a vertex at this point
-        aug_lagrange_point = -W / rho + x_bar
-        if not isclose(x_val, aug_lagrange_point, abs_tol=tolerance):
-            num_cuts += self.add_cut(2*aug_lagrange_point - x_val, tolerance, persistent_solver)
-        # finally, create another vertex at the aug_lagrange_point by rotating
-        # rotated_x_val_x_bar around the aug_lagrange_point
-        if not isclose(rotated_x_val_x_bar, aug_lagrange_point, abs_tol=tolerance):
-            num_cuts += self.add_cut(2*aug_lagrange_point - rotated_x_val_x_bar, tolerance, persistent_solver)
-        # If we only added 0 or 1 cuts initially, add up to two more
-        # to capture something of the proximal term. This can happen
-        # when x_bar == x_val and W == 0.
-        if self.cut_index <= 1:
-            num_cuts += self.add_initial_cuts(x_val, tolerance, persistent_solver)
+        if rho > 0:
+            aug_lagrange_point = -W / rho + x_bar
+            if not isclose(x_val, aug_lagrange_point, abs_tol=tolerance):
+                num_cuts += self.add_cut(2*aug_lagrange_point - x_val, tolerance, persistent_solver)
+            # finally, create another vertex at the aug_lagrange_point by rotating
+            # rotated_x_val_x_bar around the aug_lagrange_point
+            if not isclose(rotated_x_val_x_bar, aug_lagrange_point, abs_tol=tolerance):
+                num_cuts += self.add_cut(2*aug_lagrange_point - rotated_x_val_x_bar, tolerance, persistent_solver)
+            # If we only added 0 or 1 cuts initially, add up to two more
+            # to capture something of the proximal term. This can happen
+            # when x_bar == x_val and W == 0.
+            if self.cut_index <= 1:
+                num_cuts += self.add_initial_cuts(x_val, tolerance, persistent_solver)
         # print(f"{x_val=}, {x_bar=}, {W=}")
         # print(f"{self.cut_values=}")
         # print(f"{self.cut_index=}")
