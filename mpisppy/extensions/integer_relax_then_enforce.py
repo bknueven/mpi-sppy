@@ -24,7 +24,7 @@ class IntegerRelaxThenEnforce(mpisppy.extensions.extension.Extension):
         options = opt.options.get("integer_relax_then_enforce_options", {})
         # fraction of iterations or time to spend in relaxed mode
         self.ratio = options.get("ratio", 0.5)
-        self.agg_on_relax_only = options.get("agg_on_relax_only", True)
+        self.agg_on_relax_only = options.get("agg_on_relax_only", False)
         self._non_agg_rhos = {}
         self._reset_non_agg_rhos_next_iter = False
 
