@@ -309,7 +309,7 @@ class SPOpt(SPBase):
         logger.debug("  early solve_loop for rank={}".format(self.cylinder_rank))
 
         if self.extensions is not None:
-                self.extobject.pre_solve_loop()
+            self.extobject.pre_solve_loop()
 
         # note that when there is no bundling, scenarios are subproblems
         if use_scenarios_not_subproblems:
