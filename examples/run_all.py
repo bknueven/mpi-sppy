@@ -158,7 +158,6 @@ def do_one_mmw(dirname, runefstring, npyfile, mmwargstring):
 
         os.remove(npyfile)
     os.chdir("..")
-
 do_one("farmer", "farmer_ef.py", 1,
        "1 3 {}".format(solver_name))
 # for farmer_cylinders, the first arg is num_scens and is required
@@ -248,19 +247,17 @@ do_one("farmer",
        f"--num-scens 3 --crops-multiplier=1  --EF-solver-name={solver_name} "
        "--BPL-c0 25 --BPL-eps 100 --confidence-level 0.95 --BM-vs-BPL BPL")
 
-do_one("netdes", "netdes_cylinders.py", 5,
+do_one("netdes", "netdes_cylinders.py", 4,
        "--max-iterations=3 --instance-name=network-10-20-L-01 "
-       "--solver-name={} --rel-gap=0.0 --default-rho=1 --presolve "
-       "--slammax --lagrangian --xhatshuffle --cross-scenario-cuts --max-solver-threads=2".format(solver_name))
+       "--solver-name={} --rel-gap=0.0 --default-rho=10000 --presolve "
+       "--slammax --subgradient-hub --xhatshuffle --cross-scenario-cuts --max-solver-threads=2".format(solver_name))
 
 # sizes is slow for xpress so try linearizing the proximal term.
 do_one("sizes",
        "sizes_cylinders.py",
        3,
-       "--linearize-proximal-terms "
-       "--num-scens=10 --bundles-per-rank=0 --max-iterations=5 "
-       "--default-rho=1 --lagrangian --xhatshuffle "
-       "--iter0-mipgap=0.01 --iterk-mipgap=0.001 "
+       "--config-file=sizes_config.txt "
+       "--num-scens=10 "
        "--solver-name={}".format(solver_name))
 
 do_one("sizes",
@@ -280,12 +277,13 @@ do_one("sslp",
        "--integer-relax-then-enforce "
        "--integer-relax-then-enforce-ratio=0.95 "
        "--lagrangian "
-       "--max-iterations=100 --default-rho=1 "
+       "--reduced-costs-rho "
+       "--max-iterations=100 --default-rho=1e-6 "
        "--reduced-costs --rc-fixer --xhatshuffle "
        "--linearize-proximal-terms "
-       "--rel-gap=0.0 "
+       "--rel-gap=0.0 --surrogate-nonant "
+       "--use-primal-dual-rho-updater --primal-dual-rho-update-threshold=10 "
        "--solver-name={}".format(solver_name))
-
 do_one("hydro", "hydro_cylinders.py", 3,
        "--branching-factors \"3 3\" --bundles-per-rank=0 --max-iterations=100 "
        "--default-rho=1 --xhatshuffle --lagrangian "

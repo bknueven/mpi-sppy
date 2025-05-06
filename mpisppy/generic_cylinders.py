@@ -14,23 +14,37 @@ import json
 import shutil
 import numpy as np
 import pyomo.environ as pyo
+import pyomo.common.config as pyofig
+
 from mpisppy.spin_the_wheel import WheelSpinner
+
 import mpisppy.utils.cfg_vanilla as vanilla
 import mpisppy.utils.config as config
 import mpisppy.utils.sputils as sputils
+
 from mpisppy.convergers.norm_rho_converger import NormRhoConverger
 from mpisppy.convergers.primal_dual_converger import PrimalDualConverger
-from mpisppy.extensions.extension import MultiExtension
+
+from mpisppy.extensions.extension import MultiExtension, Extension
 from mpisppy.extensions.fixer import Fixer
 from mpisppy.extensions.mipgapper import Gapper
+from mpisppy.extensions.norm_rho_updater import NormRhoUpdater
+from mpisppy.extensions.primal_dual_rho import PrimalDualRho
 from mpisppy.extensions.gradient_extension import Gradient_extension
-from mpisppy.extensions.scenario_lpfiles import Scenario_lpfiles
+from mpisppy.extensions.scenario_lp_mps_files import Scenario_lp_mps_files
+
+from mpisppy.utils.wxbarwriter import WXBarWriter
+from mpisppy.utils.wxbarreader import WXBarReader
+
+import mpisppy.utils.pickle_bundle as pickle_bundle
+import mpisppy.utils.proper_bundler as proper_bundler
+
 import mpisppy.utils.solver_spec as solver_spec
 import mpisppy.opt.relaxation_solvers.xpress
 import mpisppy.opt.relaxation_solvers.gurobi
+
 from mpisppy import global_toc
 from mpisppy import MPI
-
 
 def _parse_args(m):
     # m is the model file module
@@ -48,8 +62,8 @@ def _parse_args(m):
                       description="The string used for a directory of ouput along with a csv and an npv file (default None, which means no soltion output)",
                       domain=str,
                       default=None)
-    cfg.add_to_config(name="scenario_lpfiles",
-                      description="Invokes an extension that writes an model lp file and a nonants json file for each scenario before iteration 0",
+    cfg.add_to_config(name="write_scenario_lp_mps_files",
+                      description="Invokes an extension that writes an model lp file, mps file and a nonants json file for each scenario before iteration 0",
                       domain=bool,
                       default=False)
 
@@ -57,6 +71,8 @@ def _parse_args(m):
     # many models, e.g., farmer, need num_scens_required
     #  in which case, it should go in the inparser_adder function
     # cfg.num_scens_required()
+    # On the other hand, this program really wants cfg.num_scens somehow so
+    # maybe it should just require it.
 
     cfg.EF_base()  # If EF is slected, most other options will be moot
     # There are some arguments here that will not make sense for all models
@@ -64,16 +80,19 @@ def _parse_args(m):
     cfg.two_sided_args()
     cfg.ph_args()
     cfg.aph_args()
+    cfg.subgradient_args()
     cfg.fixer_args()    
     cfg.integer_relax_then_enforce_args()
     cfg.gapper_args()    
     cfg.fwph_args()
     cfg.lagrangian_args()
     cfg.ph_ob_args()
-    cfg.subgradient_args()
+    cfg.subgradient_bounder_args()
     cfg.xhatshuffle_args()
     cfg.ph_xhat_args()
     cfg.xhatxbar_args()
+    cfg.norm_rho_args()
+    cfg.primal_dual_rho_args()
     cfg.converger_args()
     cfg.wxbar_read_write_args()
     cfg.tracking_args()
@@ -84,6 +103,14 @@ def _parse_args(m):
     cfg.coeff_rho_args()
     cfg.sensi_rho_args()
     cfg.reduced_costs_rho_args()
+
+    cfg.add_to_config("user_defined_extensions",
+                      description="Space-delimited module names for user extensions",
+                      domain=pyofig.ListOf(str),
+                      default=None)
+    # TBD - think about adding directory for json options files
+
+    
     cfg.parse_command_line(f"mpi-sppy for {cfg.module_name}")
     
     cfg.checker()  # looks for inconsistencies 
@@ -101,7 +128,7 @@ def _name_lists(module, cfg, bundle_wrapper=None):
             "For now, stage2EFsolvern is required for multistage xhat"
     else:
         all_nodenames = None
-        num_scens = cfg.num_scens
+        num_scens = cfg.get("num_scens")  # maybe None is OK
 
     # proper bundles should be almost magic
     if cfg.unpickle_bundles_dir or cfg.scenarios_per_bundle is not None:
@@ -146,6 +173,26 @@ def _do_decomp(module, cfg, scenario_creator, scenario_creator_kwargs, scenario_
                                    rho_setter = rho_setter,
                                    all_nodenames = all_nodenames,
                                    )
+    elif cfg.subgradient_hub:
+        # Vanilla Subgradient hub
+        hub_dict = vanilla.subgradient_hub(
+                       *beans,
+                       scenario_creator_kwargs=scenario_creator_kwargs,
+                       ph_extensions=None,
+                       ph_converger=ph_converger,
+                       rho_setter = rho_setter,
+                       all_nodenames = all_nodenames,
+                   )
+    elif cfg.fwph_hub:
+        # Vanilla FWPH hub
+        hub_dict = vanilla.fwph_hub(
+                       *beans,
+                       scenario_creator_kwargs=scenario_creator_kwargs,
+                       ph_extensions=None,
+                       ph_converger=ph_converger,
+                       rho_setter = rho_setter,
+                       all_nodenames = all_nodenames,
+                   )
     else:
         # Vanilla PH hub
         hub_dict = vanilla.ph_hub(*beans,
@@ -155,7 +202,11 @@ def _do_decomp(module, cfg, scenario_creator, scenario_creator_kwargs, scenario_
                                   rho_setter = rho_setter,
                                   all_nodenames = all_nodenames,
                                   )
-    
+
+    # the intent of the following is to transition to strictly
+    # cfg-based option passing, as opposed to dictionary-based processing.
+    hub_dict['opt_kwargs']['options']['cfg'] = cfg                
+        
     # Extend and/or correct the vanilla dictionary
     ext_classes = list()
     # TBD: add cross_scenario_cuts, which also needs a cylinder
@@ -187,8 +238,35 @@ def _do_decomp(module, cfg, scenario_creator, scenario_creator_kwargs, scenario_
         ext_classes.append(Gradient_extension)
         hub_dict['opt_kwargs']['options']['gradient_extension_options'] = {'cfg': cfg}        
 
-    if cfg.scenario_lpfiles:
-        ext_classes.append(Scenario_lpfiles)
+    if cfg.write_scenario_lp_mps_files:
+        ext_classes.append(Scenario_lp_mps_files)
+
+    if cfg.W_and_xbar_reader:
+        ext_classes.append(WXBarReader)
+
+    if cfg.W_and_xbar_writer:
+        ext_classes.append(WXBarWriter)
+
+    if cfg.user_defined_extensions is not None:
+        for ext_name in cfg.user_defined_extensions:
+            module = sputils.module_name_to_module(ext_name)
+            ext_classes = []
+            # Collect all valid Extension instances in the module to ensure no valid extensions are missed.
+            for name in dir(module):
+                if isinstance(getattr(module, name), Extension):
+                    ext_classes.append(getattr(module, name))
+            if not ext_classes:
+                raise RuntimeError(f"Could not find an mpisppy extension in module {ext_name}")
+            # Add all found extensions to the hub_dict
+            for ext_class in ext_classes:
+                vanilla.extension_adder(hub_dict, ext_class)
+            # grab JSON for this module's option dictionary
+            json_filename = ext_name+".json"
+            if os.path.exists(json_filename):
+                ext_options= json.load(json_filename)
+                hub_dict['opt_kwargs']['options'][ext_name] = ext_options
+            else:
+                raise RuntimeError(f"JSON options file {json_filename} for user defined extension not found")
 
     if cfg.sep_rho:
         vanilla.add_sep_rho(hub_dict, cfg)
@@ -215,10 +293,17 @@ def _do_decomp(module, cfg, scenario_creator, scenario_creator_kwargs, scenario_
                 'tol': cfg.primal_dual_converger_tol,
                 'tracking': True}
 
-    ## norm rho adaptive rho (not the gradient version)
-    #if cfg.use_norm_rho_updater:
-    #    extension_adder(hub_dict, NormRhoUpdater)
-    #    hub_dict['opt_kwargs']['options']['norm_rho_options'] = {'verbose': True}
+    # norm rho adaptive rho (not the gradient version)
+    if cfg.use_norm_rho_updater:
+        vanilla.extension_adder(hub_dict, NormRhoUpdater)
+        hub_dict['opt_kwargs']['options']['norm_rho_options'] = {'verbose': cfg.verbose}
+
+    if cfg.use_primal_dual_rho_updater:
+        vanilla.extension_adder(hub_dict, PrimalDualRho)
+        hub_dict['opt_kwargs']['options']['primal_dual_rho_options'] = {
+                'verbose': cfg.verbose,
+                'rho_update_threshold': cfg.primal_dual_rho_update_threshold,
+            }
 
     # FWPH spoke
     if cfg.fwph:
@@ -275,6 +360,10 @@ def _do_decomp(module, cfg, scenario_creator, scenario_creator_kwargs, scenario_
         xhatshuffle_spoke = vanilla.xhatshuffle_spoke(*beans,
                                                       scenario_creator_kwargs=scenario_creator_kwargs,
                                                       all_nodenames=all_nodenames)
+        # special code for multi-stage (e.g., hydro)
+        if cfg.get("stage2EFsolvern") is not None:
+            xhatshuffle_spoke["opt_kwargs"]["options"]["stage2EFsolvern"] = cfg["stage2EFsolvern"]
+            xhatshuffle_spoke["opt_kwargs"]["options"]["branching_factors"] = cfg["branching_factors"]
 
     if cfg.xhatxbar:
         xhatxbar_spoke = vanilla.xhatxbar_spoke(*beans,
@@ -303,13 +392,6 @@ def _do_decomp(module, cfg, scenario_creator, scenario_creator_kwargs, scenario_
                                               all_nodenames=all_nodenames,
                                               rho_setter = None)
 
-                
-   # special code for multi-stage (e.g., hydro)
-    if cfg.get("stage2EFsolvern") is not None:
-        assert cfg.get("xhatshuffle"), "xhatshuffle is required for stage2EFsolvern"
-        xhatshuffle_spoke["opt_kwargs"]["options"]["stage2EFsolvern"] = cfg["stage2EFsolvern"]
-        xhatshuffle_spoke["opt_kwargs"]["options"]["branching_factors"] = cfg["branching_factors"]
-
     list_of_spoke_dict = list()
     if cfg.fwph:
         list_of_spoke_dict.append(fw_spoke)
@@ -327,17 +409,32 @@ def _do_decomp(module, cfg, scenario_creator, scenario_creator_kwargs, scenario_
         list_of_spoke_dict.append(ph_xhat_spoke)
     if cfg.reduced_costs:
         list_of_spoke_dict.append(reduced_costs_spoke)
-        
+
+    # if the user dares, let them mess with the hubdict prior to solve
+    if hasattr(module,'hub_and_spoke_dict_callback'):
+        module.hub_and_spoke_dict_callback(hub_dict, list_of_spoke_dict, cfg)
+
 
     wheel = WheelSpinner(hub_dict, list_of_spoke_dict)
     wheel.spin()
 
     if cfg.solution_base_name is not None:
+        root_writer = getattr(module, "first_stage_solution_writer",
+                                     sputils.first_stage_nonant_npy_serializer)
+        tree_writer = getattr(module, "tree_solution_writer", None)
+    
         wheel.write_first_stage_solution(f'{cfg.solution_base_name}.csv')
         wheel.write_first_stage_solution(f'{cfg.solution_base_name}.npy',
-                first_stage_solution_writer=sputils.first_stage_nonant_npy_serializer)
-        wheel.write_tree_solution(f'{cfg.solution_base_name}_soldir')    
+                first_stage_solution_writer=root_writer)
+        if tree_writer is not None:
+            wheel.write_tree_solution(f'{cfg.solution_base_name}_soldir',
+                                      scenario_tree_solution_writer=tree_writer)
+        else:
+            wheel.write_tree_solution(f'{cfg.solution_base_name}_soldir')
         global_toc("Wrote solution data.")
+
+    if hasattr(module, "custom_writer"):
+        module.custom_writer(wheel, cfg)
 
 
 #==========
@@ -446,11 +543,28 @@ def _do_EF(module, cfg, scenario_creator, scenario_creator_kwargs, scenario_deno
         print("Warning: non-optimal solver termination")
 
     global_toc(f"EF objective: {pyo.value(ef.EF_Obj)}")
+
     if cfg.solution_base_name is not None:
+        root_writer = getattr(module, "ef_root_nonants_solution_writer", None)
+        tree_writer = getattr(module, "ef_tree_solution_writer", None)
+        
         sputils.ef_nonants_csv(ef, f'{cfg.solution_base_name}.csv')
         sputils.ef_ROOT_nonants_npy_serializer(ef, f'{cfg.solution_base_name}.npy')
-        sputils.write_ef_tree_solution(ef,f'{cfg.solution_base_name}_soldir')
+        if root_writer is not None:
+            sputils.write_ef_first_stage_solution(ef, f'{cfg.solution_base_name}.csv',   # might overwite
+                                                  first_stage_solution_writer=root_writer)
+        else:
+            sputils.write_ef_first_stage_solution(ef, f'{cfg.solution_base_name}.csv')            
+        if tree_writer is not None:
+            sputils.write_ef_tree_solution(ef,f'{cfg.solution_base_name}_soldir',
+                                          scenario_tree_solution_writer=tree_writer)
+        else:
+            sputils.write_ef_tree_solution(ef,f'{cfg.solution_base_name}_soldir')
         global_toc("Wrote EF solution data.")
+
+    if hasattr(module, "custom_writer"):
+        module.custom_writer(ef, cfg)
+        
 
 def _model_fname():
     def _bad_news():
@@ -502,15 +616,15 @@ if __name__ == "__main__":
         fname = os.path.basename(model_fname)
         sys.path.append(dpath)
         module = importlib.import_module(fname)
-    
+
     cfg = _parse_args(module)
 
+    # Perhaps use an object as the so-called module.
+    if hasattr(module, "get_mpisppy_helper_object"):
+        module = module.get_mpisppy_helper_object(cfg)
+    
     bundle_wrapper = None  # the default
     if _proper_bundles(cfg):
-        # TBD: remove the need for dill if you are not reading or writing
-        import mpisppy.utils.pickle_bundle as pickle_bundle
-        import mpisppy.utils.proper_bundler as proper_bundler
-    
         bundle_wrapper = proper_bundler.ProperBundler(module)
         scenario_creator = bundle_wrapper.scenario_creator
         # The scenario creator is wrapped, so these kw_args will not go the original
@@ -518,7 +632,6 @@ if __name__ == "__main__":
         scenario_creator_kwargs = bundle_wrapper.kw_creator(cfg)
     elif cfg.unpickle_scenarios_dir is not None:
         # So reading pickled scenarios cannot be composed with proper bundles
-        import mpisppy.utils.pickle_bundle as pickle_bundle
         scenario_creator = _read_pickled_scenario
         scenario_creator_kwargs = {"cfg": cfg}
     else:  # the most common case

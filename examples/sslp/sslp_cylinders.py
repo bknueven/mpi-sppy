@@ -10,6 +10,7 @@ import sslp
 
 from mpisppy.spin_the_wheel import WheelSpinner
 from mpisppy.extensions.fixer import Fixer
+from mpisppy.extensions.primal_dual_rho import PrimalDualRho
 from mpisppy.utils import config
 import mpisppy.utils.cfg_vanilla as vanilla
 
@@ -23,15 +24,21 @@ def _parse_args():
                          domain=str,
                          default=None,
                          argparse_args = {"required": True})
-
+    cfg.add_to_config("surrogate_nonant",
+                      description="use a surrogate nonant summing the total number of servers",
+                      domain=bool,
+                      default=False,
+                     )
     cfg.two_sided_args()
     cfg.fixer_args()
     cfg.xhatlooper_args()
     cfg.fwph_args()
     cfg.lagrangian_args()
     cfg.xhatshuffle_args()
-    cfg.subgradient_args()
+    cfg.subgradient_bounder_args()
     cfg.reduced_costs_args()
+    cfg.reduced_costs_rho_args()
+    cfg.primal_dual_rho_args()
     cfg.coeff_rho_args()
     cfg.integer_relax_then_enforce_args()
     cfg.parse_command_line("sslp_cylinders")
@@ -60,7 +67,7 @@ def main():
     if cfg.default_rho is None:
         raise RuntimeError("The --default-rho option must be specified")
 
-    scenario_creator_kwargs = {"data_dir": f"{sslp.__file__[:-8]}/data/{inst}/scenariodata"}
+    scenario_creator_kwargs = {"data_dir": f"{sslp.__file__[:-8]}/data/{inst}/scenariodata", "surrogate":cfg.surrogate_nonant}
     scenario_creator = sslp.scenario_creator
     scenario_denouement = sslp.scenario_denouement    
     all_scenario_names = [f"Scenario{i+1}" for i in range(num_scen)]
@@ -91,6 +98,17 @@ def main():
 
     if cfg.coeff_rho:
         vanilla.add_coeff_rho(hub_dict, cfg)
+
+    if cfg.reduced_costs_rho:
+        vanilla.add_reduced_costs_rho(hub_dict, cfg)
+
+
+    if cfg.use_primal_dual_rho_updater:
+        vanilla.extension_adder(hub_dict, PrimalDualRho)
+        hub_dict['opt_kwargs']['options']['primal_dual_rho_options'] = {
+                'verbose': cfg.verbose,
+                'rho_update_threshold': cfg.primal_dual_rho_update_threshold,
+            }
 
     if cfg.integer_relax_then_enforce:
         vanilla.add_integer_relax_then_enforce(hub_dict, cfg)

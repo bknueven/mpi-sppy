@@ -18,7 +18,8 @@ from mpisppy.phbase import PHBase
 from mpisppy.opt.ph import PH
 from mpisppy.opt.aph import APH
 from mpisppy.opt.lshaped import LShapedMethod
-from mpisppy.fwph.fwph import FWPH
+from mpisppy.opt.subgradient import Subgradient
+from mpisppy.opt.fwph import FWPH
 from mpisppy.utils.xhat_eval import Xhat_Eval
 import mpisppy.utils.sputils as sputils
 from mpisppy.cylinders.fwph_spoke import FrankWolfeOuterBound
@@ -35,8 +36,7 @@ from mpisppy.cylinders.lshaped_bounder import XhatLShapedInnerBound
 from mpisppy.cylinders.slam_heuristic import SlamMaxHeuristic, SlamMinHeuristic
 from mpisppy.cylinders.cross_scen_spoke import CrossScenarioCutSpoke
 from mpisppy.cylinders.reduced_costs_spoke import ReducedCostsSpoke
-from mpisppy.cylinders.hub import PHHub
-from mpisppy.cylinders.hub import APHHub
+from mpisppy.cylinders.hub import PHHub, SubgradientHub, APHHub, FWPHHub
 from mpisppy.extensions.extension import MultiExtension
 from mpisppy.extensions.fixer import Fixer
 from mpisppy.extensions.integer_relax_then_enforce import IntegerRelaxThenEnforce
@@ -68,6 +68,8 @@ def shared_options(cfg):
         "tee-rank0-solves": cfg.tee_rank0_solves,
         "trace_prefix" : cfg.trace_prefix,
         "presolve" : cfg.presolve,
+        "rounding_bias" : cfg.rounding_bias,
+        "warmstart_subproblems" : cfg.warmstart_subproblems,
     }
     if _hasit(cfg, "max_solver_threads"):
         shoptions["iter0_solver_options"]["threads"] = cfg.max_solver_threads
@@ -78,6 +80,8 @@ def shared_options(cfg):
         shoptions["iterk_solver_options"]["mipgap"] = cfg.iterk_mipgap
     if _hasit(cfg, "reduced_costs"):
         shoptions["rc_bound_tol"] = cfg.rc_bound_tol
+    if _hasit(cfg, "solver_log_dir"):
+        shoptions["solver_log_dir"] = cfg.solver_log_dir
 
     return shoptions
 
@@ -140,6 +144,7 @@ def ph_hub(
     }
     add_wxbar_read_write(hub_dict, cfg)
     add_ph_tracking(hub_dict, cfg)
+    add_timed_mipgap(hub_dict, cfg)
     return hub_dict
 
 
@@ -178,6 +183,91 @@ def aph_hub(cfg,
 
     return hub_dict
 
+def subgradient_hub(cfg,
+    scenario_creator,
+    scenario_denouement,
+    all_scenario_names,
+    scenario_creator_kwargs=None,
+    ph_extensions=None,
+    extension_kwargs=None,
+    ph_converger=None,
+    rho_setter=None,
+    variable_probability=None,
+    all_nodenames=None,
+):
+    shoptions = shared_options(cfg)
+    options = copy.deepcopy(shoptions)
+    options["convthresh"] = cfg.intra_hub_conv_thresh
+    options["bundles_per_rank"] = cfg.bundles_per_rank
+    options["smoothed"] = 0
+
+    hub_dict = {
+        "hub_class": SubgradientHub,
+        "hub_kwargs": {"options": {"rel_gap": cfg.rel_gap,
+                                   "abs_gap": cfg.abs_gap,
+                                   "max_stalled_iters": cfg.max_stalled_iters}},
+        "opt_class": Subgradient,
+        "opt_kwargs": {
+            "options": options,
+            "all_scenario_names": all_scenario_names,
+            "scenario_creator": scenario_creator,
+            "scenario_creator_kwargs": scenario_creator_kwargs,
+            "scenario_denouement": scenario_denouement,
+            "rho_setter": rho_setter,
+            "variable_probability": variable_probability,
+            "extensions": ph_extensions,
+            "extension_kwargs": extension_kwargs,
+            "ph_converger": ph_converger,
+            "all_nodenames": all_nodenames
+        }
+    }
+    add_wxbar_read_write(hub_dict, cfg)
+    add_ph_tracking(hub_dict, cfg)
+    return hub_dict
+
+def fwph_hub(cfg,
+    scenario_creator,
+    scenario_denouement,
+    all_scenario_names,
+    scenario_creator_kwargs=None,
+    ph_extensions=None,
+    extension_kwargs=None,
+    ph_converger=None,
+    rho_setter=None,
+    variable_probability=None,
+    all_nodenames=None,
+):
+    shoptions = shared_options(cfg)
+    options = copy.deepcopy(shoptions)
+    options["convthresh"] = cfg.intra_hub_conv_thresh
+    options["bundles_per_rank"] = cfg.bundles_per_rank
+    options["smoothed"] = 0
+
+    options.update(_fwph_options(cfg))
+
+    hub_dict = {
+        "hub_class": FWPHHub,
+        "hub_kwargs": {"options": {"rel_gap": cfg.rel_gap,
+                                   "abs_gap": cfg.abs_gap,
+                                   "max_stalled_iters": cfg.max_stalled_iters}},
+        "opt_class": FWPH,
+        "opt_kwargs": {
+            "options": options,
+            "all_scenario_names": all_scenario_names,
+            "scenario_creator": scenario_creator,
+            "scenario_creator_kwargs": scenario_creator_kwargs,
+            "scenario_denouement": scenario_denouement,
+            "rho_setter": rho_setter,
+            "variable_probability": variable_probability,
+            "extensions": ph_extensions,
+            "extension_kwargs": extension_kwargs,
+            "ph_converger": ph_converger,
+            "all_nodenames": all_nodenames
+        }
+    }
+    add_wxbar_read_write(hub_dict, cfg)
+    add_ph_tracking(hub_dict, cfg)
+    return hub_dict
 
 def extension_adder(hub_dict,ext_class):
     # TBD March 2023: this is not really good enough
@@ -249,12 +339,10 @@ def add_reduced_costs_fixer(hub_dict,
     hub_dict["opt_kwargs"]["options"]["rc_options"] = {
             "verbose": cfg.rc_verbose,
             "debug": cfg.rc_debug,
-            "use_rc_fixer": cfg.rc_fixer,
             "zero_rc_tol": cfg.rc_zero_tol,
             "fix_fraction_target_pre_iter0": cfg.rc_fix_fraction_pre_iter0,
             "fix_fraction_target_iter0": cfg.rc_fix_fraction_iter0,
             "fix_fraction_target_iterK": cfg.rc_fix_fraction_iterk,
-            "use_rc_bt": cfg.rc_bound_tightening,
             "rc_bound_tol": cfg.rc_bound_tol,
             "rc_fixer_require_improving_lagrangian": cfg.rc_fixer_require_improving_lagrangian,
         }
@@ -336,6 +424,36 @@ def add_ph_tracking(cylinder_dict, cfg, spoke=False):
 
     return cylinder_dict
 
+def add_timed_mipgap(cylinder_dict, cfg):
+    if _hasit(cfg,'timed_mipgap'):
+        from mpisppy.extensions.timed_mipgap import TimedMIPGapCB
+        cylinder_dict = extension_adder(cylinder_dict, TimedMIPGapCB)
+        cylinder_dict['opt_kwargs']['options']['timed_mipgap']= {'timecurve':cfg.timed_mipgap_options}
+
+    return cylinder_dict        
+
+def _fwph_options(cfg):
+
+    mip_solver_options, qp_solver_options = dict(), dict()
+    if _hasit(cfg, "max_solver_threads"):
+        mip_solver_options["threads"] = cfg.max_solver_threads
+        qp_solver_options["threads"] = cfg.max_solver_threads
+    if _hasit(cfg, "fwph_mipgap"):
+        mip_solver_options["mipgap"] = cfg.fwph_mipgap
+
+    fw_options = {
+        "FW_iter_limit": cfg.fwph_sdm_iter_limit,
+        "FW_weight": cfg.fwph_weight,
+        "FW_conv_thresh": cfg.fwph_conv_thresh,
+        "stop_check_tol": cfg.fwph_stop_check_tol,
+        "solver_name": cfg.solver_name,
+        "FW_verbose": cfg.verbose,
+        "mip_solver_options": mip_solver_options,
+        "qp_solver_options": qp_solver_options,
+    }
+
+    return fw_options
+
 def fwph_spoke(
     cfg,
     scenario_creator,
@@ -346,30 +464,15 @@ def fwph_spoke(
     rho_setter=None,
 ):
     shoptions = shared_options(cfg)
+    options = copy.deepcopy(shoptions)
 
-    mip_solver_options, qp_solver_options = dict(), dict()
-    if _hasit(cfg, "max_solver_threads"):
-        mip_solver_options["threads"] = cfg.max_solver_threads
-        qp_solver_options["threads"] = cfg.max_solver_threads
-    if _hasit(cfg, "fwph_mipgap"):
-        mip_solver_options["mipgap"] = cfg.fwph_mipgap
+    options.update(_fwph_options(cfg))
 
-    fw_options = {
-        "FW_iter_limit": cfg.fwph_iter_limit,
-        "FW_weight": cfg.fwph_weight,
-        "FW_conv_thresh": cfg.fwph_conv_thresh,
-        "stop_check_tol": cfg.fwph_stop_check_tol,
-        "solver_name": cfg.solver_name,
-        "FW_verbose": cfg.verbose,
-        "mip_solver_options": mip_solver_options,
-        "qp_solver_options": qp_solver_options,
-    }
     fw_dict = {
         "spoke_class": FrankWolfeOuterBound,
         "opt_class": FWPH,
         "opt_kwargs": {
-            "PH_options": shoptions,  # be sure convthresh is zero for fwph
-            "FW_options": fw_options,
+            "options": options,  # be sure convthresh is zero for fwph
             "all_scenario_names": all_scenario_names,
             "scenario_creator": scenario_creator,
             "scenario_creator_kwargs": scenario_creator_kwargs,

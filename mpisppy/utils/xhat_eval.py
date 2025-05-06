@@ -80,7 +80,8 @@ class Xhat_Eval(mpisppy.spopt.SPOpt):
                   verbose=False,
                   disable_pyomo_signal_handling=False,
                   update_objective=True,
-                  compute_val_at_nonant=False):
+                  compute_val_at_nonant=False,
+                  warmstart=False):
 
         self._lazy_create_solvers()
         pyomo_solve_time = super().solve_one(solver_options, k, s,
@@ -89,7 +90,8 @@ class Xhat_Eval(mpisppy.spopt.SPOpt):
                                              tee=tee,
                                              verbose=verbose,
                                              disable_pyomo_signal_handling=disable_pyomo_signal_handling,
-                                             update_objective=update_objective)
+                                             update_objective=update_objective,
+                                             warmstart=warmstart)
 
         if compute_val_at_nonant:
             objfct = self.saved_objectives[k]
@@ -109,7 +111,8 @@ class Xhat_Eval(mpisppy.spopt.SPOpt):
                    disable_pyomo_signal_handling=False,
                    tee=False,
                    verbose=False,
-                   compute_val_at_nonant=False):
+                   compute_val_at_nonant=False,
+                   warmstart=False):
         """ Loop over self.local_subproblems and solve them in a manner 
             dicated by the arguments. In addition to changing the Var
             values in the scenarios, update _PySP_feas_indictor for each.
@@ -161,7 +164,8 @@ class Xhat_Eval(mpisppy.spopt.SPOpt):
                                               tee=tee,
                                               gripe=gripe,
                 disable_pyomo_signal_handling=disable_pyomo_signal_handling,
-                compute_val_at_nonant=compute_val_at_nonant)
+                compute_val_at_nonant=compute_val_at_nonant,
+                                              warmstart=warmstart,)
 
         if dtiming:
             all_pyomo_solve_times = self.mpicomm.gather(pyomo_solve_time, root=0)
@@ -300,6 +304,7 @@ class Xhat_Eval(mpisppy.spopt.SPOpt):
             You probably want to call _save_nonants right before calling this
         """
         self._lazy_create_solvers()
+        rounding_bias = self.options.get("rounding_bias", 0.0)
         for k,s in self.local_scenarios.items():
 
             persistent_solver = None
@@ -320,8 +325,10 @@ class Xhat_Eval(mpisppy.spopt.SPOpt):
                                            .format(nlens[ndn], ndn, len(cache[ndn])))
                     for i in range(nlens[ndn]): 
                         this_vardata = node.nonant_vardata_list[i]
+                        if this_vardata in node.surrogate_vardatas:
+                            continue
                         if this_vardata.is_binary() or this_vardata.is_integer():
-                            this_vardata._value = round(cache[ndn][i])
+                            this_vardata._value = round(cache[ndn][i] + rounding_bias)
                         else:
                             this_vardata._value = cache[ndn][i]
                         this_vardata.fix()
@@ -337,6 +344,7 @@ class Xhat_Eval(mpisppy.spopt.SPOpt):
             Loop over the scenarios to restore, but loop over subproblems
             to alert persistent solvers.
         """
+        rounding_bias = self.options.get("rounding_bias", 0.0)
         for k,s in self.local_scenarios.items():
 
             persistent_solver = None
@@ -345,8 +353,10 @@ class Xhat_Eval(mpisppy.spopt.SPOpt):
                     persistent_solver = s._solver_plugin
 
             for var in s._mpisppy_data.nonant_indices.values():
+                if var in s._mpisppy_data.all_surrogate_nonants:
+                    continue
                 if var.is_binary() or var.is_integer():
-                    var._value = round(var._value)
+                    var._value = round(var._value + rounding_bias)
                 var.fix()
                 if not self.bundling and persistent_solver is not None:
                     persistent_solver.update_var(var)
@@ -366,6 +376,8 @@ class Xhat_Eval(mpisppy.spopt.SPOpt):
                     if sname not in self.names_in_bundles[rank_local][bunnum]:
                         break
                     for var in scen._mpisppy_data.nonant_indices.values():
+                        if var in scen._mpisppy_data.all_surrogate_nonants:
+                            continue
                         persistent_solver.update_var(var)
 
     def calculate_incumbent(self, fix_nonants=True, verbose=False):

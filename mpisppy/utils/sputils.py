@@ -17,6 +17,8 @@ import numpy as np
 import inspect
 import importlib
 import mpisppy.scenario_tree as scenario_tree
+
+from enum import IntEnum
 from pyomo.core import Objective
 from pyomo.repn import generate_standard_repn
 
@@ -28,6 +30,12 @@ from pyomo.core.base.indexed_component_slice import IndexedComponent_slice
 from mpisppy import tt_timer
 
 global_rank = MPI.COMM_WORLD.Get_rank()
+
+
+class WarmstartStatus(IntEnum):
+    FALSE = 0  # Falsy
+    TRUE = 1   # Truthy
+    CHECK = -1 # Truthy
 
 
 def build_vardatalist(model, varlist=None):
@@ -370,7 +378,10 @@ def _create_EF_from_scen_dict(scen_dict, EF_name=None,
                         ref_vars[(ndn, i)] = v
                 # Add a non-anticipativity constraint, except in the case when
                 # the variable is fixed and nonant_for_fixed_vars=False.
+                # or we're in the surrogate nonants
                 elif (nonant_for_fixed_vars) or (not v.is_fixed()):
+                    if v in node.surrogate_vardatas:
+                        continue
                     expr = LinearExpression(linear_coefs=[1,-1],
                                             linear_vars=[v,ref_vars[(ndn,i)]],
                                             constant=0.)
@@ -510,7 +521,7 @@ def write_ef_first_stage_solution(ef,
         representative_scenario = getattr(ef,ef._ef_scenario_names[0])
         first_stage_solution_writer(solution_file_name, 
                                     representative_scenario,
-                                    bundling=False)
+                                    bundling=True)
 
 def write_ef_tree_solution(ef, solution_directory_name,
         scenario_tree_solution_writer=scenario_tree_solution_writer):
@@ -530,7 +541,7 @@ def write_ef_tree_solution(ef, solution_directory_name,
             scenario_tree_solution_writer(solution_directory_name,
                                           scenario_name, 
                                           scenario,
-                                          bundling=False)
+                                          bundling=True)
     
 
 def extract_num(string):
@@ -600,7 +611,7 @@ def parent_ndn(nodename):
     if nodename == 'ROOT':
         return None
     else:
-        return re.search('(.+)_(\d+)',nodename).group(1)
+        return re.search(r'(.+)_(\d+)',nodename).group(1)
 
     
 def option_string_to_dict(ostr):
@@ -756,7 +767,7 @@ class _TreeNode():
             # make children
             first = scenfirst
             self.kids = list()
-            child_regex = re.compile(name+'_\d*\Z')
+            child_regex = re.compile(name+r'_\d*\Z')
             child_list = [x for x in desc_leaf_dict if child_regex.match(x) ]
             for i in range(len(desc_leaf_dict)):
                 childname = name+f"_{i}"
@@ -765,7 +776,7 @@ class _TreeNode():
                         raise RuntimeError("The all_nodenames argument is giving an inconsistent tree."
                                            f"The node {name} has {len(child_list)} children, but {childname} is not one of them.")
                     break
-                childdesc_regex = re.compile(childname+'(_\d*)*\Z')
+                childdesc_regex = re.compile(childname+r'(_\d*)*\Z')
                 child_leaf_dict = {ndn:desc_leaf_dict[ndn] for ndn in desc_leaf_dict \
                                    if childdesc_regex.match(ndn)}
                 #We determine the number of children of this node
@@ -896,15 +907,26 @@ class _ScenTree():
     
     
 ######## Utility to attach the one and only node to a two-stage scenario #######
-def attach_root_node(model, firstobj, varlist, nonant_ef_suppl_list=None, do_uniform=True):
+def attach_root_node(model, firstobj, varlist, nonant_ef_suppl_list=None, surrogate_nonant_list=None, do_uniform=True):
     """ Create a root node as a list to attach to a scenario model
     Args:
         model (ConcreteModel): model to which this will be attached
         firstobj (Pyomo Expression): First stage cost (e.g. model.FC)
         varlist (list): Pyomo Vars in first stage (e.g. [model.A, model.B])
         nonant_ef_suppl_list (list of pyo Var, Vardata or slices):
-              vars for which nonanticipativity constraints tighten the EF
-              (important for bundling)
+              Vars for which nonanticipativity constraints will only be added to
+              the extensive form (important for bundling), but for which mpi-sppy
+              will not enforce them as nonanticipative elsewhere.
+              NOTE: These types of variables are often indicator variables
+                    that are already present in the deterministic model.
+        surrogate_nonant_list (list of pyo Var, VarData or slices):
+              Vars for which nonanticipativity constraints are enforced implicitly
+              by the vars in varlist, but which may speed PH convergence and/or
+              aid in cut generation when considered explicitly.
+              These vars will be ignored for fixers, incumbent finders which
+              fix nonants to calculate solutions, and the EF creator.
+              NOTE: These types of variables are typically artificially added
+                    to the model to capture hierarchical model features.
         do_uniform (boolean): controls a side-effect to deal with missing probs
 
     Note: 
@@ -912,7 +934,9 @@ def attach_root_node(model, firstobj, varlist, nonant_ef_suppl_list=None, do_uni
     """
     model._mpisppy_node_list = [
         scenario_tree.ScenarioNode("ROOT", 1.0, 1, firstobj, varlist, model,
-                                   nonant_ef_suppl_list = nonant_ef_suppl_list)
+                                   nonant_ef_suppl_list = nonant_ef_suppl_list,
+                                   surrogate_nonant_list = surrogate_nonant_list,
+                                  )
     ]
     if do_uniform:
         # Avoid a warning per scenario
@@ -1063,7 +1087,7 @@ def get_branching_factors_from_nodenames(all_nodenames):
     staget_node = "ROOT"
     branching_factors = []
     while staget_node+"_0" in all_nodenames:
-        child_regex = re.compile(staget_node+'_\d*\Z')
+        child_regex = re.compile(staget_node+r'_\d*\Z')
         child_list = [x for x in all_nodenames if child_regex.match(x) ]
         
         branching_factors.append(len(child_list))

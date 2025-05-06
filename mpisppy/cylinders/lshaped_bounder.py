@@ -7,6 +7,7 @@
 # full copyright and license information.
 ###############################################################################
 import mpisppy.cylinders.spoke as spoke
+import mpisppy.utils.sputils as sputils
 
 from math import inf
 from mpisppy.utils.xhat_eval import Xhat_Eval
@@ -30,7 +31,8 @@ class XhatLShapedInnerBound(spoke.InnerBoundNonantSpoke):
             dtiming=False,
             gripe=True,
             tee=teeme,
-            verbose=verbose
+            verbose=verbose,
+            warmstart=sputils.WarmstartStatus.CHECK,
         )
         self.opt._update_E1()  # Apologies for doing this after the solves...
         if abs(1 - self.opt.E1) > self.opt.E1_tolerance:
@@ -61,8 +63,8 @@ class XhatLShapedInnerBound(spoke.InnerBoundNonantSpoke):
         #xh_iter = 1
         while not self.got_kill_signal():
 
-            if self.new_nonants:
-                
+            if self.update_nonants():
+
                 self.opt._put_nonant_cache(self.localnonants)
                 self.opt._restore_nonants()
                 obj = self.opt.calculate_incumbent(fix_nonants=True)

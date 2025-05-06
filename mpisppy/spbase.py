@@ -17,6 +17,7 @@ import pyomo.environ as pyo
 import mpisppy.utils.sputils as sputils
 from mpisppy import global_toc
 
+from pyomo.common.collections import ComponentSet
 from mpisppy import MPI
 
 logger = logging.getLogger("SPBase")
@@ -97,11 +98,15 @@ class SPBase:
         self.first_stage_solution_available = False
         self.best_solution_obj_val = None
 
+        # sometimes we know a best bound
+        self.best_bound_obj_val = None
+
         if options.get("toc", True):
             global_toc("Initializing SPBase")
 
         if self.n_proc > len(self.all_scenario_names):
-            raise RuntimeError("More ranks than scenarios")
+            raise RuntimeError(f"More ranks ({self.n_proc}) than scenarios"
+                               f" ({len(self.all_scenario_names)})")
 
         self._calculate_scenario_ranks()
         # Put the deprecation message in the init so they should only see it once per rank
@@ -305,13 +310,19 @@ class SPBase:
     def _attach_nonant_indices(self):
         for (sname, scenario) in self.local_scenarios.items():
             _nonant_indices = dict()
+            _all_surrogate_nonants = ComponentSet()
             nlens = scenario._mpisppy_data.nlens        
             for node in scenario._mpisppy_node_list:
                 ndn = node.name
                 for i in range(nlens[ndn]):
                     _nonant_indices[ndn,i] = node.nonant_vardata_list[i]
+                _all_surrogate_nonants.update(node.surrogate_vardatas)
             scenario._mpisppy_data.nonant_indices = _nonant_indices
+            scenario._mpisppy_data.all_surrogate_nonants = _all_surrogate_nonants
         self.nonant_length = len(_nonant_indices)
+        # sanity check the nonant length
+        for s in self.local_scenarios.values():
+            assert self.nonant_length == len(s._mpisppy_data.nonant_indices)
 
 
     def _attach_nlens(self):
@@ -572,6 +583,12 @@ class SPBase:
             for var in s.component_data_objects(pyo.Var):
                 scenario_cache[var] = var.value
             s._mpisppy_data.best_solution_cache = scenario_cache
+
+    def _get_cylinder_name(self):
+        if self.spcomm:
+            return self.spcomm.__class__.__name__
+        else:
+            return self.__class__.__name__
 
     def load_best_solution(self):
         for k,s in self.local_scenarios.items():

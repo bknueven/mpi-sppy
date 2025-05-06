@@ -31,7 +31,14 @@ class Extension:
         '''
         pass
 
-    def initialize_spoke_indices(self):
+    def register_send_fields(self):
+        '''
+        Method called by the Hub SPCommunicator to get any fields that the extension
+        will make available to spokes.
+        '''
+        return
+
+    def register_receive_fields(self):
         '''
         Method called when the Hub SPCommunicator initializes its spoke indices
 
@@ -100,7 +107,7 @@ class Extension:
         pass
 
     def iter0_post_solver_creation(self):
-        ''' When this method is called, PH iteration 0 has been initiated and 
+        ''' When this method is called, PH iteration 0 has been initiated and
             all solver objects have been created.
         '''
         pass
@@ -168,9 +175,13 @@ class MultiExtension(Extension):
         for lobject in self.extdict.values():
             lobject.setup_hub()
 
-    def initialize_spoke_indices(self):
+    def register_send_fields(self):
         for lobject in self.extdict.values():
-            lobject.initialize_spoke_indices()
+            lobject.register_send_fields()
+
+    def register_receive_fields(self):
+        for lobject in self.extdict.values():
+            lobject.register_receive_fields()
 
     def sync_with_spokes(self):
         for lobject in self.extdict.values():
@@ -199,7 +210,7 @@ class MultiExtension(Extension):
 
     def iter0_post_solver_creation(self):
         for lobject in self.extdict.values():
-            lobject.iter0_post_solver_creation()        
+            lobject.iter0_post_solver_creation()
 
     def post_iter0(self):
         for lobject in self.extdict.values():
