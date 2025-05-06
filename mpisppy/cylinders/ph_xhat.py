@@ -254,24 +254,26 @@ class PHXhat(XhatShuffleInnerBound):
         while not self.got_kill_signal():
             # When there is no iter0, the serial number must be checked.
             # (unrelated: uncomment the next line to see the source of delay getting an xhat)
-            if self.get_serial_number() == 0:
+            if self._nonant_len_receive_buffer.id() == 0:
                 continue
 
             if (xh_iter - 1) % 100 == 0:
                 self._loop_debug_msg(xh_iter)
 
+            new_nonants = self.update_nonants()
+
             # check if we don't already have new nonants
-            if self.new_nonants:
+            if new_nonants:
                 self._new_nonant_debug_msg(xh_iter)
             if not restart_new_nonants:
-                restart_new_nonants = self.new_nonants
+                restart_new_nonants = new_nonants
             if (restart_new_nonants and iter_since_restart >= self.restart_iters) or (conv < self.opt.options["convthresh"]):
                 restart_new_nonants = False
                 best_obj_this_nonants = float("inf")
                 self.restart_ph()
                 iter_since_restart = 0
 
-            elif self.new_nonants:
+            elif new_nonants:
                 # best_obj_this_nonants = float("inf")
                 self.fix_unfix_new_nonants()
 
