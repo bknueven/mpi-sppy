@@ -81,6 +81,7 @@ def _parse_args(m):
     cfg.relaxed_ph_fixer_args()
     cfg.integer_relax_then_enforce_args()
     cfg.gapper_args()    
+    cfg.gapper_args(name="lagrangian")
     cfg.ph_nonant_args()
     cfg.relaxed_ph_args()
     cfg.fwph_args()
@@ -324,6 +325,8 @@ def _do_decomp(module, cfg, scenario_creator, scenario_creator_kwargs, scenario_
                                                 rho_setter = rho_setter,
                                                 all_nodenames = all_nodenames,
                                                 )
+        if cfg.lagrangian_starting_mipgap is not None:
+            vanilla.add_gapper(lagrangian_spoke, cfg, "lagrangian")
 
     # ph outer bounder spoke
     if cfg.ph_ob:
