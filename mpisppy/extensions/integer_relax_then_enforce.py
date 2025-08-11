@@ -25,6 +25,9 @@ class IntegerRelaxThenEnforce(mpisppy.extensions.extension.Extension):
         # fraction of iterations or time to spend in relaxed mode
         self.ratio = options.get("ratio", 0.5)
 
+        self.disable_prox_after_integer_enable = True
+        self._reenable_prox = False
+
 
     def pre_iter0(self):
         global_toc(f"{self.__class__.__name__}: relaxing integrality constraints", self.opt.cylinder_rank == 0)
@@ -45,8 +48,16 @@ class IntegerRelaxThenEnforce(mpisppy.extensions.extension.Extension):
                     for v in vlist:
                         subproblem_solver.update_var(v)
         self._integers_relaxed = False
+        if self.disable_prox_after_integer_enable:
+            global_toc(f"{self.__class__.__name__}: disabling prox!!")
+            self.opt._disable_prox()
+            self._reenable_prox = True
 
     def miditer(self):
+        if self._reenable_prox:
+            global_toc(f"{self.__class__.__name__}: re-enabling prox!!")
+            self.opt._reenable_prox()
+            self._reenable_prox = False
         if not self._integers_relaxed:
             return
         # time is running out
